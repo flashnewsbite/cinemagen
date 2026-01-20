@@ -48,8 +48,7 @@ class Editor:
                 else: buffer += char
             if buffer: parts.append((buffer, is_highlight))
 
-            # 2. [버그 수정] 수평 중앙 정렬을 위한 X 좌표 계산
-            # 기존 코드의 '1080' 버그를 수정하여 실제 캔버스 너비(max_width)를 사용
+            # 2. 수평 중앙 정렬을 위한 X 좌표 계산
             total_w = sum([font.getlength(p[0]) for p in parts])
             current_x = (max_width - total_w) / 2 if align == 'center' else x
 
@@ -58,7 +57,7 @@ class Editor:
                 part_w = font.getlength(part_text)
                 
                 if highlight and highlight_style == 'box':
-                    # [스타일 1] 타이틀용 박스 하이라이트
+                    # [스타일 1] 타이틀용 박스 하이라이트 (WriterAgent가 *키워드*로 넘겨주면 적용됨)
                     padding_x = 8; padding_y = 4
                     box_x1 = current_x - padding_x
                     box_y1 = current_y + font_ascender - padding_y
@@ -100,6 +99,7 @@ class Editor:
             font_title = ImageFont.load_default(); font_sub = ImageFont.load_default()
 
         # 1. 이미지 배치
+        img_y = 0 # 이미지가 없을 경우를 대비한 초기값
         if os.path.exists(img_path):
             img = Image.open(img_path).convert("RGB")
             target_ratio = 4/3
@@ -115,9 +115,11 @@ class Editor:
             canvas.paste(img, (0, img_y))
 
         # 2. 상단 타이틀 (중앙 정렬 & 박스 하이라이트)
-        # Y 좌표를 130으로 내려서 상단 여백 확보
+        # [수정] Y 좌표 계산: 영상 맨 위(0)부터 이미지 시작(img_y) 사이의 정중앙
+        title_y = img_y // 2 if img_y > 0 else 130 # 이미지가 없을 경우 기본값 130 유지
+        
         self.draw_text_with_highlight(
-            draw, video_title, (W//2, 130), font_title, W, 'center', 
+            draw, video_title, (W//2, title_y), font_title, W, 'center', 
             line_spacing=1.2, highlight_style='box'
         )
         
@@ -173,7 +175,7 @@ class Editor:
             aud_path = f"audio/audio_{idx}.mp3"
             if not os.path.exists(aud_path): continue
             audio = AudioFileClip(aud_path)
-            # create_layout_clip 호출 (수정된 로직 적용)
+            # create_layout_clip 호출
             clip = self.create_layout_clip(scene, f"images/image_{idx}.png", audio.duration, video_title)
             clips.append(clip.set_audio(audio))
 

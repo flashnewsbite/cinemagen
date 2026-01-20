@@ -6,6 +6,7 @@ import asyncio
 from PIL import Image
 from config import Config
 import random
+import base64
 
 class MediaAgent:
     def __init__(self):
@@ -62,6 +63,7 @@ class MediaAgent:
             key = Config.get_current_key()
             try:
                 # Gemini REST API 호출
+                # [중요] config.py의 모델명(TTS_MODEL_NAME)이 올바른지 확인 필수
                 url = f"https://generativelanguage.googleapis.com/v1beta/{Config.TTS_MODEL_NAME}:generateContent?key={key}"
                 
                 payload = {
@@ -90,31 +92,32 @@ class MediaAgent:
                     continue
                 
                 if response.status_code != 200:
-                    # 기타 에러면 다음 키 시도 없이 바로 Edge로 넘어갈지 결정
-                    # 여기서는 안전하게 Edge로 넘기기 위해 Exception 발생
+                    # 상세 에러 메시지 포함하여 예외 발생 (이제 화면에 이유가 보입니다)
                     raise Exception(f"API Error {response.status_code}: {response.text}")
 
-                # 오디오 데이터 디코딩 (Base64 -> Binary)
-                # *주의* Gemini TTS 응답 포맷은 모델 버전에 따라 다를 수 있음
-                # 현재 Preview 기준: response.json()['candidates'][0]['content']['parts'][0]['inlineData']['data']
+                # 오디오 데이터 디코딩
                 try:
                     resp_json = response.json()
-                    b64_audio = resp_json['candidates'][0]['content']['parts'][0]['inlineData']['data']
-                    import base64
-                    audio_data = base64.b64decode(b64_audio)
-                    
-                    with open(filename, "wb") as f:
-                        f.write(audio_data)
-                    return True
+                    if 'candidates' in resp_json and resp_json['candidates']:
+                        part = resp_json['candidates'][0]['content']['parts'][0]
+                        if 'inlineData' in part:
+                            b64_audio = part['inlineData']['data']
+                            audio_data = base64.b64decode(b64_audio)
+                            with open(filename, "wb") as f:
+                                f.write(audio_data)
+                            return True
+                    raise Exception("No audio data found in response")
                 except Exception as parse_err:
                     raise Exception(f"Parse Error: {parse_err}")
 
             except Exception as e:
-                # print(f"   ⚠️ Gemini TTS Attempt Failed: {e}")
+                # [수정] 에러 로그 출력 (이제 왜 안되는지 알 수 있음)
+                print(f"   ⚠️ Gemini TTS Attempt Failed: {e}")
+                
                 if "429" in str(e) or "Quota" in str(e):
                     Config.rotate_key()
                 else:
-                    # 키 문제가 아닌 다른 문제면 바로 반복문 종료하고 Edge로
+                    # 키 문제가 아닌 모델 문제(404, 400)라면 즉시 Edge로 전환
                     break
         
         return False
@@ -123,12 +126,12 @@ class MediaAgent:
         gemini_voice = self.GEMINI_VOICES.get(gender).get(tone, "Kore")
         edge_voice = self.EDGE_VOICES.get(gender).get(tone, "en-US-JennyNeural")
         
-        # Edge TTS용 속도 (Gemini는 적용 불가)
-        edge_rate = "+20%"
+        # [수정 완료] 속도 0% (정상 속도)
+        edge_rate = "+0%"
         
         print(f"🎙️ [Media] Audio Generation Strategy:")
         print(f"   1️⃣ Primary: Gemini TTS (1.0x Speed, Voice: {gemini_voice})")
-        print(f"   2️⃣ Backup : Edge TTS (1.2x Speed, Voice: {edge_voice})")
+        print(f"   2️⃣ Backup : Edge TTS (1.0x Speed, Voice: {edge_voice})")
 
         intro_txt = data.get('intro_narration', "Welcome.")
         outro_txt = data.get('outro_narration', "Subscribe.")
@@ -141,22 +144,17 @@ class MediaAgent:
                     print(f"   ✅ Gemini TTS Success (1.0x): {filename}")
                     return
 
-                # 2. 실패 시 Edge TTS (1.2배속 적용)
+                # 2. 실패 시 Edge TTS (정상 속도)
                 try:
                     communicate = edge_tts.Communicate(text, edge_voice, rate=edge_rate)
                     await communicate.save(filename)
-                    print(f"   ✅ Edge TTS Success (1.2x): {filename}")
+                    print(f"   ✅ Edge TTS Success (1.0x): {filename}")
                 except Exception as e:
                     print(f"   ❌ All TTS Failed: {e}")
 
-            # Intro
             await generate_final(intro_txt, "audio/intro.mp3")
-            
-            # Scenes
             for i, scene in enumerate(scenes):
                 await generate_final(scene['narration'], f"audio/audio_{i+1}.mp3")
-                
-            # Outro
             await generate_final(outro_txt, "audio/outro.mp3")
 
         asyncio.run(_run())

@@ -14,12 +14,13 @@ class Config:
     SERPER_KEY = os.getenv("SERPER_API_KEY")
     current_key_idx = 0
     
-    # [긴급 수정] 'Lite' 모델 권한 없음(Limit 0) 문제 해결
-    # 'latest'를 쓰면 구글이 알아서 사용 가능한 최신 Flash 모델(1.5 또는 2.0)로 연결해줍니다.
+    # 텍스트 생성 모델 (유지)
     MODEL_NAME = "models/gemini-flash-latest"
     
-    # TTS 모델
-    TTS_MODEL_NAME = "models/gemini-2.5-flash-preview-tts"
+    # [수정] TTS 모델명 변경 (여기가 문제였습니다!)
+    # 기존 "preview-tts"는 없는 모델이라 404 에러가 났을 겁니다.
+    # 현재 작동하는 "exp" 버전으로 교체합니다.
+    TTS_MODEL_NAME = "models/gemini-2.0-flash-exp"
 
     SAFETY_SETTINGS = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},

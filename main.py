@@ -22,7 +22,6 @@ def main():
     category = "world" # 기본값
     
     if choice == "1":
-        # [서브 메뉴 추가]
         print("\n   [Select Category]")
         print("   1. 🌍 U.S. & World News")
         print("   2. 💻 Tech & Science News")
@@ -33,7 +32,6 @@ def main():
         
         sub_choice = input("   👉 Select Category (1-6): ")
         
-        # 카테고리 매핑
         cat_map = {
             "1": "world",
             "2": "tech",
@@ -42,9 +40,8 @@ def main():
             "5": "sports",
             "6": "ent"
         }
-        category = cat_map.get(sub_choice, "world") # 잘못 누르면 world 기본
+        category = cat_map.get(sub_choice, "world")
         
-        # 해당 카테고리로 뉴스 수집 시작
         context = news_agent.get_daily_news(category=category)
         
     elif choice == "2":
@@ -82,17 +79,14 @@ def main():
 
     # 4. 미디어 생성
     media = MediaAgent()
-    
-    # [이미지] 고해상도(800px+) 다운로드 로직 유지 (media_agent.py)
     media.get_images(data['script']['scenes'])
-    
-    # [오디오] Intro/Outro 포함 전체 생성
     media.get_audio(data, gender=gender, tone=tone)
 
     # 5. 편집
     editor = Editor()
-    # [편집] 자막 Safe Zone, 로고 회피, 4:3 크롭 등 모든 수정사항 적용됨 (editor.py)
-    editor.make_shorts(data)
+    
+    # [핵심 수정] 여기서 category를 넘겨줘야 파일명에 반영됩니다!
+    editor.make_shorts(data, category=category)
     
     print("\n🎉 All Done! Check 'results' folder.")
 

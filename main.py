@@ -9,12 +9,13 @@ def main():
     print("========================================")
     print("🎥 CinemaGen: News Shorts Automation")
     print("========================================")
+    
+    # 1. 뉴스 소스 선택
+    print("[Step 1] Select News Source")
     print("1. 📅 Daily News Summary")
     print("2. 🔗 Specific News URL")
-    
     choice = input("👉 Select Option (1/2): ")
     
-    # 1. 뉴스 수집
     news_agent = NewsAgent()
     context = ""
     mode = "daily"
@@ -30,32 +31,43 @@ def main():
         return
 
     if not context:
-        print("❌ 뉴스 내용을 가져오지 못했습니다.")
+        print("❌ Failed to fetch news.")
         return
 
-    # 2. 대본 및 메타데이터 작성
+    # 2. 성우 설정
+    print("\n[Step 2] Voice Settings")
+    print("👉 Gender: 1. Male / 2. Female")
+    g_input = input("   Selection (default 2): ")
+    gender = "male" if g_input == "1" else "female"
+
+    print("👉 Tone: 1. Mature(Trust) / 2. Neutral(Comfy) / 3. Bright(Youth)")
+    t_input = input("   Selection (default 2): ")
+    tone = t_input if t_input in ["1", "2", "3"] else "2"
+
+    # 3. 대본 작성
     writer = WriterAgent()
     data = writer.generate_content(context, mode)
     
     if not data:
-        print("❌ AI 생성 실패")
+        print("❌ AI Generation Failed")
         return
 
-    script = data['script']
-    metadata = data['metadata']
-    
-    # 메타데이터 파일 저장
     timestamp = time.strftime("%Y%m%d_%H%M")
-    writer.save_metadata_file(metadata, f"metadata_{timestamp}.txt")
+    writer.save_metadata_file(data['metadata'], f"metadata_{timestamp}.txt")
 
-    # 3. 미디어 생성
+    # 4. 미디어 생성
     media = MediaAgent()
-    media.get_images(script['scenes'])
-    media.get_audio(script['scenes'])
+    
+    # [이미지] 장면 리스트만 필요함
+    media.get_images(data['script']['scenes'])
+    
+    # [오디오] Intro/Outro 때문에 '전체 데이터(data)'가 필요함 (핵심 수정!)
+    # 여기서 data['script']['scenes']를 넘기면 에러가 납니다.
+    media.get_audio(data, gender=gender, tone=tone)
 
-    # 4. 편집
+    # 5. 편집
     editor = Editor()
-    editor.make_shorts(script['scenes'])
+    editor.make_shorts(data)
     
     print("\n🎉 All Done! Check 'results' folder.")
 

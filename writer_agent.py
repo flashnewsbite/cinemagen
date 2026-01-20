@@ -8,53 +8,47 @@ from datetime import date
 class WriterAgent:
     def generate_content(self, context, mode="daily"):
         print("✍️ [Writer] Creating script & metadata (English)...")
-        
-        # [수정] 날짜 포맷 변경: dd-mm-yyyy
-        today_str = date.today().strftime("%d-%m-%Y")
+        today_str = date.today().strftime("%d:%m:%Y")
 
         prompt = f"""
-        Role: Expert News Creator & Social Media Manager for a Global Audience.
+        Role: Expert News Creator for Fast-Paced Shorts.
         Date: {today_str}
         
         Task: 
         1. Create a YouTube Shorts script based on [Input Context].
-        2. Create optimized metadata.
-        3. Create Dynamic Intro/Outro Narrations.
+        2. Create metadata.
+        3. Create Dynamic Intro/Outro.
 
         [Input Context]
         {context}
 
         [⚠️ LANGUAGE RULES - CRITICAL]
-        1. **Script Narration**: MUST be in **ENGLISH**.
-        2. **Image Prompts**: MUST be in **ENGLISH**.
-        3. **Metadata**: MUST be in **ENGLISH**.
-        
-        [Dynamic Intro/Outro Rules]
-        - **Intro**: Be witty, mention "Flash News Bite". Connect with today's date ({today_str}) or specific events. (Max 5 sec)
-        - **Outro**: Strong Call to Action (CTA). e.g., "Sub or miss out!" (Max 5 sec)
+        - **ALL Output MUST be in ENGLISH.**
+
+        [⏱️ TIMING & CONTENT RULES]
+        1. **Intro**: MAX 3 SECONDS. (e.g., "Flash News: AI takes over!")
+        2. **Outro**: MAX 3 SECONDS. (e.g., "Sub for more!")
+        3. **Narration**: Fast-paced, concise. Max 2 short sentences per scene.
 
         [Highlighting Rules]
         - Wrap 1-2 key words per sentence in asterisks (*) for yellow highlighting.
-        - Example: "The *AI revolution* is here."
 
         [Output Format - JSON Only]
         {{
-            "title": "Short Video Title",
-            "intro_narration": "Witty intro text...",
-            "outro_narration": "Punchy CTA text...",
+            "title": "Short Title",
+            "intro_narration": "Very short intro...",
+            "outro_narration": "Very short outro...",
             "script": {{
                 "scenes": [
-                    {{ "narration": "English narration line...", "image_prompt": "Visual description in English..." }}
+                    {{ 
+                        "narration": "Narration text here...", 
+                        "image_prompt": "Visual description..." 
+                    }}
                 ]
             }},
             "metadata": {{
-                "youtube_title": "English Title...",
-                "youtube_description": "English Description...",
-                "hashtags": "#News #Shorts ...",
-                "x_post": "English Post...",
-                "instagram_post": "English Post...",
-                "tiktok_post": "English Post...",
-                "threads_post": "English Post..."
+                "youtube_title": "...", "youtube_description": "...", "hashtags": "...",
+                "x_post": "...", "instagram_post": "...", "tiktok_post": "...", "threads_post": "..."
             }}
         }}
         """
@@ -79,12 +73,11 @@ class WriterAgent:
             except Exception as e:
                 err_msg = str(e)
                 print(f"   ⚠️ Writer Error: {err_msg}")
-                
                 if "400" in err_msg or "API_KEY_INVALID" in err_msg:
                     print("   ❌ Invalid API Key. Rotating...")
                     Config.rotate_key()
                 elif "limit: 0" in err_msg.lower() or "404" in err_msg or "not found" in err_msg:
-                    print("   📉 Model unavailable. Switching to 'gemini-1.5-pro' (Safe Mode).")
+                    print("   📉 Model unavailable. Switching to 'gemini-1.5-pro'.")
                     Config.MODEL_NAME = "models/gemini-1.5-pro"
                 elif "429" in err_msg or "quota" in err_msg.lower():
                     print("   ⏳ Quota Exceeded. Rotating key...")
@@ -99,47 +92,6 @@ class WriterAgent:
         return None
 
     def save_metadata_file(self, metadata, filename="social_metadata.txt"):
-        """Save metadata to text file"""
         path = os.path.join("results", filename)
-        content = f"""
-==================================================
-📢 YOUTUBE SHORTS OPTIMIZATION (ENGLISH)
-==================================================
-
-[TITLE]
-{metadata.get('youtube_title')}
-
-[DESCRIPTION]
-{metadata.get('youtube_description')}
-
-[HASHTAGS]
-{metadata.get('hashtags')}
-
-
-==================================================
-📱 SOCIAL MEDIA POSTS (Copy & Paste)
-==================================================
-
-[X.com / Twitter]
---------------------------------------------------
-{metadata.get('x_post')}
---------------------------------------------------
-
-[Instagram]
---------------------------------------------------
-{metadata.get('instagram_post')}
---------------------------------------------------
-
-[TikTok]
---------------------------------------------------
-{metadata.get('tiktok_post')}
---------------------------------------------------
-
-[Threads]
---------------------------------------------------
-{metadata.get('threads_post')}
---------------------------------------------------
-"""
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        with open(path, "w", encoding="utf-8") as f: f.write(str(metadata))
         print(f"✅ Metadata saved: {path}")

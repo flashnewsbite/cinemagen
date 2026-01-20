@@ -1,22 +1,28 @@
 import os
-from moviepy.editor import *
+# [핵심 수정] Pillow 10.0+ 호환성 패치
+# ANTIALIAS가 없다는 에러를 방지하기 위해 최신 기술(LANCZOS)로 연결해줍니다.
 from PIL import Image, ImageFont, ImageDraw
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
+
+from moviepy.editor import *
 import numpy as np
 
-# 한글 폰트 경로 (윈도우 기준)
-FONT_KO = "C:/Windows/Fonts/malgunbd.ttf"
+# 영어 전용 폰트 (Arial Bold)
+FONT_EN = "C:/Windows/Fonts/arialbd.ttf"
 
 class Editor:
     def __init__(self):
         os.makedirs("results", exist_ok=True)
 
     def create_subtitle(self, text, duration):
-        """노란색 자막 생성"""
+        """Create English Subtitles (Yellow)"""
         w, h = 720, 1280
         img = Image.new('RGBA', (w, h), (0,0,0,0))
         draw = ImageDraw.Draw(img)
         
-        try: font = ImageFont.truetype(FONT_KO, 45)
+        # 폰트 로드
+        try: font = ImageFont.truetype(FONT_EN, 50) 
         except: font = ImageFont.load_default()
         
         # 텍스트 중앙 하단 정렬
@@ -25,40 +31,24 @@ class Editor:
         x = (w - text_w) / 2
         y = 950 # 하단 위치
         
-        # 외곽선
+        # 외곽선 (검정)
         for dx, dy in [(-2,-2),(-2,2),(2,-2),(2,2)]:
             draw.text((x+dx, y+dy), text, font=font, fill='black')
-        draw.text((x, y), text, font=font, fill='#FFD700') # Gold color
+        
+        # 본문 (노란색)
+        draw.text((x, y), text, font=font, fill='#FFD700')
         
         return ImageClip(np.array(img)).set_duration(duration)
 
-    def process_special_clip(self, video_path, duration):
-        """Intro/Outro 로직: 영상이 짧으면 마지막 프레임 Freeze"""
-        try:
-            base = VideoFileClip(video_path).without_audio().resize(width=720)
-            if duration > base.duration:
-                freeze_time = duration - base.duration
-                last_frame = base.to_ImageClip(t=base.duration - 0.01).set_duration(freeze_time)
-                return concatenate_videoclips([base, last_frame])
-            return base.subclip(0, duration)
-        except:
-            # 파일 없거나 에러시 블랙 스크린
-            return ColorClip((720, 1280), color=(0,0,0)).set_duration(duration)
-
     def make_shorts(self, scenes):
-        print("🎬 [Editor] 영상 편집 시작...")
+        print("🎬 [Editor] Editing Video...")
         clips = []
         
         # 1. Intro
-        if scenes:
-            # 첫 씬의 오디오 길이에 맞춰 Intro 영상 조절 (Intro가 Scene 1 역할)
-            # 혹은 별도 Intro 후 Scene 1 시작? -> 여기선 Intro를 Scene 1 배경으로 사용하거나
-            # 사용자 요청: "Intro/Outro 영상을 따로 만들어 놓을거야"
-            # 보통 Intro는 0번으로 따로 붙이는게 자연스러움.
-            if os.path.exists("assets/intro.mp4"):
-                 # Intro는 나레이션 없이 그냥 2-3초 붙이기
-                 intro_clip = VideoFileClip("assets/intro.mp4").resize(width=720)
-                 clips.append(intro_clip)
+        if os.path.exists("assets/intro.mp4"):
+             # 오디오 없이 영상만 사용 (혹은 필요시 오디오 포함)
+             intro_clip = VideoFileClip("assets/intro.mp4").resize(width=720)
+             clips.append(intro_clip)
 
         # 2. Main Content
         for i, scene in enumerate(scenes):
@@ -71,7 +61,7 @@ class Editor:
             audio = AudioFileClip(aud_path)
             duration = audio.duration
             
-            # 이미지
+            # 이미지 (가로 720으로 리사이즈 + 중앙 정렬)
             if os.path.exists(img_path):
                 visual = ImageClip(img_path).set_duration(duration).resize(width=720).set_position("center")
             else:
@@ -91,6 +81,8 @@ class Editor:
 
         # 최종 렌더링
         final = concatenate_videoclips(clips, method="compose")
-        output_path = "results/final_shorts.mp4"
+        output_path = "results/final_shorts_english.mp4"
+        
+        # fps=24로 설정하여 렌더링 속도 최적화
         final.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
-        print(f"✨ 영상 생성 완료: {output_path}")
+        print(f"✨ Video Created: {output_path}")

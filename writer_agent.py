@@ -4,20 +4,23 @@ import google.generativeai as genai
 from config import Config
 import os
 from datetime import date
+import re
 
 class WriterAgent:
     def generate_content(self, context, mode="daily"):
         print("✍️ [Writer] Creating script & metadata (English)...")
+        
+        # 날짜 포맷 (dd:mm:yyyy) - 요청하신 포맷 유지
         today_str = date.today().strftime("%d:%m:%Y")
 
         prompt = f"""
-        Role: Expert News Creator for Fast-Paced Shorts.
+        Role: Expert News Creator & Social Media Manager for a Global Audience.
         Date: {today_str}
         
         Task: 
         1. Create a YouTube Shorts script based on [Input Context].
-        2. Create metadata.
-        3. Create Dynamic Intro/Outro.
+        2. Create optimized metadata.
+        3. Create Dynamic Intro/Outro Narrations.
 
         [Input Context]
         {context}
@@ -35,15 +38,12 @@ class WriterAgent:
 
         [Output Format - JSON Only]
         {{
-            "title": "Short Title",
+            "title": "Short Video Title",
             "intro_narration": "Very short intro...",
             "outro_narration": "Very short outro...",
             "script": {{
                 "scenes": [
-                    {{ 
-                        "narration": "Narration text here...", 
-                        "image_prompt": "Visual description..." 
-                    }}
+                    {{ "narration": "Narration text...", "image_prompt": "Visual description..." }}
                 ]
             }},
             "metadata": {{
@@ -68,11 +68,20 @@ class WriterAgent:
                 genai.configure(api_key=key)
                 model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=Config.SAFETY_SETTINGS)
                 response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-                return json.loads(response.text)
+                
+                # [보완] JSON 파싱 전처리 (마크다운 제거)
+                text_response = response.text.strip()
+                if text_response.startswith("```json"):
+                    text_response = text_response[7:]
+                if text_response.endswith("```"):
+                    text_response = text_response[:-3]
+                
+                return json.loads(text_response)
             
             except Exception as e:
                 err_msg = str(e)
                 print(f"   ⚠️ Writer Error: {err_msg}")
+                
                 if "400" in err_msg or "API_KEY_INVALID" in err_msg:
                     print("   ❌ Invalid API Key. Rotating...")
                     Config.rotate_key()
@@ -92,6 +101,52 @@ class WriterAgent:
         return None
 
     def save_metadata_file(self, metadata, filename="social_metadata.txt"):
+        """Save metadata in a CLEAN, readable format"""
         path = os.path.join("results", filename)
-        with open(path, "w", encoding="utf-8") as f: f.write(str(metadata))
-        print(f"✅ Metadata saved: {path}")
+        
+        # 깔끔한 포맷팅 (f-string 사용)
+        content = f"""
+============================================================
+🎬 YOUTUBE SHORTS METADATA
+============================================================
+
+[TITLE]
+{metadata.get('youtube_title', 'N/A')}
+
+[DESCRIPTION]
+{metadata.get('youtube_description', 'N/A')}
+
+[HASHTAGS]
+{metadata.get('hashtags', 'N/A')}
+
+
+============================================================
+📱 SOCIAL MEDIA POSTS (Copy & Paste)
+============================================================
+
+[X (Twitter)]
+------------------------------------------------------------
+{metadata.get('x_post', 'N/A')}
+------------------------------------------------------------
+
+[Instagram]
+------------------------------------------------------------
+{metadata.get('instagram_post', 'N/A')}
+------------------------------------------------------------
+
+[TikTok]
+------------------------------------------------------------
+{metadata.get('tiktok_post', 'N/A')}
+------------------------------------------------------------
+
+[Threads]
+------------------------------------------------------------
+{metadata.get('threads_post', 'N/A')}
+------------------------------------------------------------
+"""
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content.strip())
+            print(f"✅ Metadata saved cleanly: {path}")
+        except Exception as e:
+            print(f"❌ Failed to save metadata: {e}")

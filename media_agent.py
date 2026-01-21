@@ -13,12 +13,12 @@ class MediaAgent:
         os.makedirs("images", exist_ok=True)
         os.makedirs("audio", exist_ok=True)
 
-    # Gemini Voices (Gemini 2.0 Flash Exp에서 사용 가능)
+    # Gemini Voices (Backup)
     GEMINI_VOICES = {
         "male": {"1": "Charon", "2": "Puck", "3": "Fenrir"},
         "female": {"1": "Aoede", "2": "Kore", "3": "Leda"}
     }
-    # Edge TTS Voices (백업용)
+    # Edge TTS Voices (Main)
     EDGE_VOICES = {
         "male": {"1": "en-US-ChristopherNeural", "2": "en-US-GuyNeural", "3": "en-US-EricNeural"},
         "female": {"1": "en-US-MichelleNeural", "2": "en-US-JennyNeural", "3": "en-US-AriaNeural"}
@@ -55,41 +55,43 @@ class MediaAgent:
             else:
                 Image.new('RGB', (720, 1280), (20,30,60)).save(f"images/image_{idx}.png")
 
+    # [NEW] Edge TTS 함수 분리
+    async def try_edge_tts(self, text, filename, voice_name):
+        try:
+            communicate = edge_tts.Communicate(text, voice_name)
+            await communicate.save(filename)
+            # 파일이 정상적으로 생성되었는지 확인
+            if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                return True
+        except Exception as e:
+            print(f"   ⚠️ Edge TTS Failed: {e}")
+        return False
+
     def try_gemini_tts(self, text, filename, voice_name):
         """
-        Gemini 2.0 Flash Audio Generation
-        [수정사항] responseMimeType 대신 responseModalities 사용
+        Gemini 2.0 Flash Audio Generation (Backup)
         """
         max_retries = len(Config.GEMINI_KEYS)
         
         for attempt in range(max_retries):
             key = Config.get_current_key()
             try:
-                # API Endpoint
                 url = f"https://generativelanguage.googleapis.com/v1beta/{Config.TTS_MODEL_NAME}:generateContent?key={key}"
                 
-                # [핵심 수정] 오디오 생성 전용 Payload 구조
                 payload = {
-                    "contents": [{
-                        "parts": [{"text": text}]
-                    }],
+                    "contents": [{"parts": [{"text": text}]}],
                     "generationConfig": {
-                        # 여기가 중요합니다! 오디오 모드로 명시
                         "responseModalities": ["AUDIO"],
                         "speechConfig": {
                             "voiceConfig": {
-                                "prebuiltVoiceConfig": {
-                                    "voiceName": voice_name
-                                }
+                                "prebuiltVoiceConfig": {"voiceName": voice_name}
                             }
                         }
                     }
                 }
                 
-                # REST API 요청
                 response = requests.post(url, json=payload, timeout=10)
                 
-                # 쿼터 초과(429) 체크
                 if response.status_code == 429:
                     print(f"   ⚠️ Gemini TTS Quota Limit (Key #{Config.current_key_idx+1}) -> Rotating...")
                     Config.rotate_key()
@@ -98,10 +100,8 @@ class MediaAgent:
                 if response.status_code != 200:
                     raise Exception(f"API Error {response.status_code}: {response.text}")
 
-                # 오디오 데이터 디코딩
                 try:
                     resp_json = response.json()
-                    # 응답에서 Base64 오디오 추출
                     if 'candidates' in resp_json and resp_json['candidates']:
                         part = resp_json['candidates'][0]['content']['parts'][0]
                         if 'inlineData' in part and 'data' in part['inlineData']:
@@ -119,17 +119,18 @@ class MediaAgent:
                 if "429" in str(e) or "Quota" in str(e):
                     Config.rotate_key()
                 else:
-                    break # 키 문제가 아니면 반복 중단
+                    break 
         
         return False
 
     def get_audio(self, data, gender="female", tone="2"):
-        gemini_voice = self.GEMINI_VOICES.get(gender).get(tone, "Kore") # Gemini Voice 우선
+        # 1. 목소리 설정
         edge_voice = self.EDGE_VOICES.get(gender).get(tone, "en-US-JennyNeural")
+        gemini_voice = self.GEMINI_VOICES.get(gender).get(tone, "Kore")
         
         print(f"🎙️ [Media] Audio Generation Strategy:")
-        print(f"   1️⃣ Primary: Gemini 2.0 Flash (Voice: {gemini_voice})")
-        print(f"   2️⃣ Backup : Edge TTS (Voice: {edge_voice})")
+        print(f"   1️⃣ Primary: Edge TTS (Voice: {edge_voice})")
+        print(f"   2️⃣ Backup : Gemini 2.0 Flash (Voice: {gemini_voice})")
 
         intro_txt = data.get('intro_narration', "Welcome.")
         outro_txt = data.get('outro_narration', "Subscribe.")
@@ -137,19 +138,18 @@ class MediaAgent:
 
         async def _run():
             async def generate_final(text, filename):
-                # 1. Gemini 시도 (수정된 로직)
-                if self.try_gemini_tts(text, filename, gemini_voice):
-                    print(f"   ✅ Gemini TTS Success: {filename}")
+                # [수정됨] 1순위: Edge TTS 시도
+                if await self.try_edge_tts(text, filename, edge_voice):
+                    print(f"   ✅ Edge TTS Success: {filename}")
                     return
 
-                # 2. 실패 시 Edge TTS (백업)
-                try:
-                    print(f"   ⚠️ Switching to Edge TTS Backup...")
-                    communicate = edge_tts.Communicate(text, edge_voice)
-                    await communicate.save(filename)
-                    print(f"   ✅ Edge TTS Success: {filename}")
-                except Exception as e:
-                    print(f"   ❌ All TTS Failed: {e}")
+                # [수정됨] 2순위: 실패 시 Gemini TTS 시도 (백업)
+                print(f"   ⚠️ Edge TTS failed. Switching to Gemini Backup...")
+                if self.try_gemini_tts(text, filename, gemini_voice):
+                    print(f"   ✅ Gemini TTS (Backup) Success: {filename}")
+                    return
+
+                print(f"   ❌ All TTS Failed for {filename}")
 
             # Intro
             await generate_final(intro_txt, "audio/intro.mp3")

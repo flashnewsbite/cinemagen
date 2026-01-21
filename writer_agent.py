@@ -10,7 +10,6 @@ class WriterAgent:
     def generate_content(self, context, mode="daily"):
         print("✍️ [Writer] Creating script & metadata (English)...")
         
-        # 날짜 포맷 (dd:mm:yyyy) - 요청하신 포맷 유지
         today_str = date.today().strftime("%d:%m:%Y")
 
         prompt = f"""
@@ -67,9 +66,15 @@ class WriterAgent:
             try:
                 genai.configure(api_key=key)
                 model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=Config.SAFETY_SETTINGS)
-                response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
                 
-                # [보완] JSON 파싱 전처리 (마크다운 제거)
+                # [수정] 타임아웃(request_options) 추가: 15초 동안 응답 없으면 에러 처리
+                # 이렇게 해야 프로그램이 무한히 멈추는 것을 방지함
+                response = model.generate_content(
+                    prompt, 
+                    generation_config={"response_mime_type": "application/json"},
+                    request_options={"timeout": 15} 
+                )
+                
                 text_response = response.text.strip()
                 if text_response.startswith("```json"):
                     text_response = text_response[7:]
@@ -82,18 +87,23 @@ class WriterAgent:
                 err_msg = str(e)
                 print(f"   ⚠️ Writer Error: {err_msg}")
                 
-                if "400" in err_msg or "API_KEY_INVALID" in err_msg:
-                    print("   ❌ Invalid API Key. Rotating...")
+                # 에러 유형별 키 로테이션 처리
+                if any(x in err_msg for x in ["400", "API_KEY_INVALID", "403"]):
+                    print("   ❌ Invalid/Suspended API Key. Rotating...")
                     Config.rotate_key()
-                elif "limit: 0" in err_msg.lower() or "404" in err_msg or "not found" in err_msg:
-                    print("   📉 Model unavailable. Switching to 'gemini-1.5-pro'.")
-                    Config.MODEL_NAME = "models/gemini-1.5-pro"
-                elif "429" in err_msg or "quota" in err_msg.lower():
+                elif any(x in err_msg.lower() for x in ["limit: 0", "429", "quota", "resourceexhausted"]):
                     print("   ⏳ Quota Exceeded. Rotating key...")
                     Config.rotate_key()
-                elif "403" in err_msg:
-                     print("   ❌ Key Suspended. Rotating key...")
+                elif "deadline" in err_msg.lower() or "timeout" in err_msg.lower():
+                     print("   ⏰ Timeout. Google server is slow. Rotating key & Retrying...")
                      Config.rotate_key()
+                elif "not found" in err_msg.lower() or "404" in err_msg:
+                    print("   📉 Model unavailable. Switching to 'gemini-1.5-pro'.")
+                    Config.MODEL_NAME = "models/gemini-1.5-pro"
+                else:
+                    # 알 수 없는 에러라도 일단 키를 바꿔서 재시도하는 것이 안전함
+                    print("   ⚠️ Unknown error. Rotating key just in case...")
+                    Config.rotate_key()
 
                 attempts += 1
                 time.sleep(2)
@@ -104,7 +114,6 @@ class WriterAgent:
         """Save metadata in a CLEAN, readable format"""
         path = os.path.join("results", filename)
         
-        # 깔끔한 포맷팅 (f-string 사용)
         content = f"""
 ============================================================
 🎬 YOUTUBE SHORTS METADATA

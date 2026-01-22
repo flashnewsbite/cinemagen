@@ -197,8 +197,12 @@ class Editor:
         print(f"🎬 [Editor] Creating Video with Pause ({PAUSE_DURATION}s)...")
         scenes = data['script']['scenes']
         
-        raw_title = data.get('title', "News Update").replace("2026", "").strip()
-        final_title = raw_title
+        # [수정] 날짜 제거 로직 강화
+        raw_title = data.get('title', "News Update").replace("2026", "")
+        # 정규표현식: -MM-DD 또는 MM-DD 형태의 패턴을 찾아서 제거
+        final_title = re.sub(r'-?\d{2}-\d{2}', '', raw_title).strip()
+        # 혹시 남아있을 수 있는 앞뒤 하이픈 제거
+        final_title = final_title.strip('-').strip()
         
         clips = []
         

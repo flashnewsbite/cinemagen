@@ -1,0 +1,9 @@
+python-dotenv
+feedparser
+requests
+google-generativeai
+edge-tts
+Pillow
+google-cloud-texttospeech
+moviepy
+numpy

@@ -16,7 +16,7 @@ FONT_SUB_PATH = "C:/Windows/Fonts/arialbd.ttf"   # Arial Bold
 FIXED_TITLE_Y = 190      
 FIXED_SUBTITLE_Y = 1040  
 
-# [NEW] 오디오 사이의 휴식 간격 (초 단위)
+# 오디오 사이의 휴식 간격 (초 단위)
 PAUSE_DURATION = 0.6 
 
 class Editor:
@@ -31,9 +31,15 @@ class Editor:
             self.font_sub = ImageFont.load_default()
 
     def clean_text(self, text):
+        """
+        [수정됨] 텍스트 정제 함수
+        - 기존: 알파벳, 숫자, 기본 문장부호만 허용
+        - 추가: '%' 기호를 허용 목록에 포함시켜 "7%"가 "7"로 잘리는 문제 해결
+        """
         if not text: return ""
         text = text.replace("2026", "")
-        pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]가-힣]'
+        # [핵심 수정] 정규표현식 [] 안에 % 추가
+        pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
         clean_text = re.sub(pattern, '', text)
         return clean_text.strip()
 
@@ -130,19 +136,18 @@ class Editor:
         if os.path.exists(audio_path):
             audio = AudioFileClip(audio_path)
             
-            # [수정] 오디오 길이에 PAUSE_DURATION(0.6초)를 더함
+            # 오디오 길이에 PAUSE_DURATION을 더함
             total_duration = audio.duration + PAUSE_DURATION
             
             # 영상이 오디오보다 짧으면 마지막 프레임을 멈춰서 길이를 맞춤
             if total_duration > video.duration:
                 freeze_duration = total_duration - video.duration
-                # 마지막 프레임을 freeze_duration 만큼 정지 영상으로 만듦
                 last_frame = video.to_ImageClip(t=video.duration - 0.1).set_duration(freeze_duration)
                 video = concatenate_videoclips([video, last_frame])
             else:
                 video = video.subclip(0, total_duration)
                 
-            video = video.set_audio(audio) # 오디오 설정 (남은 뒷부분은 자동 무음 처리됨)
+            video = video.set_audio(audio) 
         
         # 배경도 늘어난 길이만큼 생성
         bg = ColorClip(size=(720, 1280), color=(0, 0, 0)).set_duration(video.duration)
@@ -197,16 +202,14 @@ class Editor:
         print(f"🎬 [Editor] Creating Video with Pause ({PAUSE_DURATION}s)...")
         scenes = data['script']['scenes']
         
-        # [수정] 날짜 제거 로직 강화
+        # 날짜 제거 로직
         raw_title = data.get('title', "News Update").replace("2026", "")
-        # 정규표현식: -MM-DD 또는 MM-DD 형태의 패턴을 찾아서 제거
         final_title = re.sub(r'-?\d{2}-\d{2}', '', raw_title).strip()
-        # 혹시 남아있을 수 있는 앞뒤 하이픈 제거
         final_title = final_title.strip('-').strip()
         
         clips = []
         
-        # Intro (Pause 적용됨)
+        # Intro
         intro_text = data.get('intro_narration', "Welcome to Flash News Bite.")
         intro = self.process_special_clip("assets/intro.mp4", "audio/intro.mp3", intro_text, final_title)
         if intro: clips.append(intro)
@@ -242,23 +245,18 @@ class Editor:
                 start = p_idx * dur_per_page
                 end = min((p_idx + 1) * dur_per_page, full_audio.duration)
                 
-                # 오디오 자르기 (정확한 문장 길이)
                 sub_audio = full_audio.subclip(start, end)
                 
-                # [핵심] 클립의 지속 시간(Duration) 설정
                 clip_duration = sub_audio.duration
                 
                 # 해당 씬의 '마지막 페이지'인 경우에만 Pause 추가
                 if p_idx == len(pages) - 1:
                     clip_duration += PAUSE_DURATION
                 
-                # 영상 클립 생성 (오디오보다 0.6초 길게 생성됨 -> 뒷부분은 무음)
                 clip = self.create_layout_clip(page_lines, img_path, clip_duration, final_title)
-                
-                # 오디오 설정 (MoviePy는 영상 길이보다 오디오가 짧으면 나머지를 무음 처리함)
                 clips.append(clip.set_audio(sub_audio))
 
-        # Outro (Pause 적용됨)
+        # Outro
         outro_text = data.get('outro_narration', "Thanks for watching.")
         outro = self.process_special_clip("assets/outro.mp4", "audio/outro.mp3", outro_text, final_title)
         if outro: clips.append(outro)

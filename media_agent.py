@@ -7,6 +7,7 @@ from PIL import Image
 from config import Config
 import random
 import base64
+import io  # [추가] 이미지를 메모리에서 확인하기 위해 필요
 
 class MediaAgent:
     def __init__(self):
@@ -26,41 +27,84 @@ class MediaAgent:
 
     def search_and_download_image(self, query, filename):
         url = "https://google.serper.dev/images"
-        payload = json.dumps({"q": query, "num": 5})
+        # [수정] 필터링으로 탈락할 것을 대비해 넉넉하게 10장 검색
+        payload = json.dumps({"q": query, "num": 10}) 
         headers = {'X-API-KEY': Config.SERPER_KEY, 'Content-Type': 'application/json'}
+        
+        # [워터마크 필터] 유료 스톡 사이트 키워드 목록
+        skip_keywords = ["stock", "getty", "alamy", "shutterstock", "istock", "dreamstime", "123rf", "depositphotos"]
+
         try:
             resp = requests.post(url, headers=headers, data=payload)
             results = resp.json().get("images", [])
             user_agents = ['Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)']
+            
             for item in results:
+                image_url = item['imageUrl']
+                
+                # 1. URL 기반 워터마크 사이트 필터링
+                if any(k in image_url.lower() for k in skip_keywords):
+                    print(f"   🚫 [Skip] Watermark Suspected: {image_url[:30]}...")
+                    continue
+
                 try:
                     headers2 = {'User-Agent': random.choice(user_agents), 'Referer': 'https://www.google.com/'}
-                    r = requests.get(item['imageUrl'], headers=headers2, timeout=5, stream=True)
+                    # 5초 타임아웃으로 다운로드 시도
+                    r = requests.get(image_url, headers=headers2, timeout=5)
+                    
                     if r.status_code == 200:
-                        with open(filename, 'wb') as f:
-                            for chunk in r.iter_content(1024): f.write(chunk)
-                        if os.path.getsize(filename) > 5000:
-                            with Image.open(filename) as img: img.verify()
-                            return True
-                except: continue
-        except: pass
+                        # 이미지를 디스크에 저장하기 전 메모리에 로드
+                        file_content = r.content
+                        try:
+                            img = Image.open(io.BytesIO(file_content))
+                            w, h = img.size
+                            
+                            # 2. 고해상도 필터 (너비 800px 미만 탈락)
+                            if w < 800:
+                                print(f"   ⚠️ [Skip] Low Resolution: {w}x{h}")
+                                continue
+                                
+                            # 3. 가로형(Landscape) 강제 (세로형/정사각형 탈락)
+                            if w <= h:
+                                print(f"   ⚠️ [Skip] Portrait/Square: {w}x{h}")
+                                continue
+                            
+                            # 모든 조건 통과 시 파일 저장
+                            with open(filename, 'wb') as f:
+                                f.write(file_content)
+                            
+                            # 파일 저장 확인
+                            if os.path.getsize(filename) > 5000:
+                                print(f"   ✅ [Saved] Valid Image: {w}x{h}")
+                                return True
+                                
+                        except Exception as e:
+                            print(f"   ⚠️ Image Check Failed: {e}")
+                            continue
+                            
+                except Exception as req_err:
+                    continue
+        except Exception as e:
+            print(f"   ❌ Image Search Error: {e}")
+            pass
+            
         return False
 
     def get_images(self, scenes):
-        print(f"🎨 [Media] Downloading Images ({len(scenes)} scenes)")
+        print(f"🎨 [Media] Downloading High-Quality Images ({len(scenes)} scenes)")
         for i, scene in enumerate(scenes):
             idx = i + 1
             if self.search_and_download_image(scene['image_prompt'], f"images/image_{idx}.png"):
-                print(f"   ✅ Image {idx} Downloaded")
+                print(f"   ✅ Scene {idx} Image Ready")
             else:
-                Image.new('RGB', (720, 1280), (20,30,60)).save(f"images/image_{idx}.png")
+                print(f"   ⚠️ Scene {idx} Failed. Generating placeholder.")
+                Image.new('RGB', (1280, 720), (20,30,60)).save(f"images/image_{idx}.png")
 
-    # [NEW] Edge TTS 함수 분리
+    # Edge TTS 함수
     async def try_edge_tts(self, text, filename, voice_name):
         try:
             communicate = edge_tts.Communicate(text, voice_name)
             await communicate.save(filename)
-            # 파일이 정상적으로 생성되었는지 확인
             if os.path.exists(filename) and os.path.getsize(filename) > 0:
                 return True
         except Exception as e:
@@ -138,12 +182,12 @@ class MediaAgent:
 
         async def _run():
             async def generate_final(text, filename):
-                # [수정됨] 1순위: Edge TTS 시도
+                # 1순위: Edge TTS 시도
                 if await self.try_edge_tts(text, filename, edge_voice):
                     print(f"   ✅ Edge TTS Success: {filename}")
                     return
 
-                # [수정됨] 2순위: 실패 시 Gemini TTS 시도 (백업)
+                # 2순위: 실패 시 Gemini TTS 시도 (백업)
                 print(f"   ⚠️ Edge TTS failed. Switching to Gemini Backup...")
                 if self.try_gemini_tts(text, filename, gemini_voice):
                     print(f"   ✅ Gemini TTS (Backup) Success: {filename}")

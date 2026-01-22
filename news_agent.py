@@ -1,217 +1,167 @@
-import requests
+import feedparser
+import re
 import json
-import xml.etree.ElementTree as ET
-from newspaper import Article
+import requests
+from datetime import datetime
 from config import Config
-from datetime import date
-from urllib.parse import urlparse
-import random
-import time
 
 class NewsAgent:
-    # [유지] 분야별 메이저 언론사 도메인
-    TRUSTED_DOMAINS = [
-        # World & US
-        "cnn.com", "foxnews.com", "reuters.com", "bbc.com", "bbc.co.uk",
-        "cbsnews.com", "abcnews.go.com", "usatoday.com", "newsweek.com",
-        "nbcnews.com", "apnews.com", "nytimes.com", "washingtonpost.com", 
-        "wsj.com", "politico.com", "npr.org", "latimes.com",
-        
-        # Tech & Science
-        "techcrunch.com", "wired.com", "theverge.com", "engadget.com", 
-        "arstechnica.com", "nasa.gov", "space.com", "science.org", 
-        "scientificamerican.com", "gizmodo.com", "cnet.com", "zdnet.com",
-        
-        # Finance
-        "bloomberg.com", "cnbc.com", "forbes.com", "businessinsider.com", 
-        "ft.com", "marketwatch.com", "economist.com", "wsj.com",
-        
-        # Sports
-        "espn.com", "bleacherreport.com", "cbssports.com", "si.com", 
-        "nba.com", "nfl.com", "mlb.com", "ufc.com", "fifa.com", "skysports.com",
-        "foxsports.com", "nbcsports.com", "sbnation.com", "goal.com", "eurosport.com",
-        "theathletic.com", "yahoo.com",
-        
-        # Arts, Culture & Entertainment
-        "variety.com", "deadline.com", "hollywoodreporter.com", "billboard.com",
-        "rollingstone.com", "vogue.com", "vanityfair.com", "elle.com", 
-        "gq.com", "pitchfork.com", "artnews.com", "tmz.com", "people.com"
-    ]
+    def __init__(self):
+        pass
 
-    USER_AGENTS = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
-    ]
-
-    def get_daily_news(self, category="world"):
-        today = date.today().strftime("%m-%d-%Y")
+    def clean_html(self, raw_html):
+        """HTML 태그 및 불필요한 공백 제거"""
+        # 1. 스크립트/스타일 태그 내용 제거 (본문과 섞이지 않게)
+        script_pattern = re.compile(r'<(script|style).*?>.*?</\1>', re.DOTALL)
+        text = re.sub(script_pattern, ' ', raw_html)
         
-        # 검색어 튜닝 (광고 필터링)
-        queries = {
-            "world": "Breaking news headlines U.S. World politics economy -betting",
-            "tech": "Latest Technology Science news headlines AI Space gadgets",
-            "finance": "Financial market news headlines economy stock market business",
-            "art": "Latest Arts Culture Fashion news headlines lifestyle",
-            "sports": "Top Sports news headlines NFL NBA MLB Soccer UFC -betting -odds -promo -bonus -code -vegas",
-            "ent": "Entertainment news headlines movies music celebrity K-pop"
+        # 2. HTML 태그 제거
+        cleanr = re.compile('<.*?>')
+        cleantext = re.sub(cleanr, ' ', text)
+        
+        # 3. 다중 공백 제거
+        return " ".join(cleantext.split())
+
+    # =========================================================================
+    # [Option 1] Google News RSS (1순위: Daily News용)
+    # =========================================================================
+    def get_google_news_rss(self, category="world"):
+        print(f"📡 [News] Attempting Primary Source: Google News RSS ({category.upper()})...")
+        
+        base_url = "https://news.google.com/rss"
+        rss_urls = {
+            "world": f"{base_url}/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
+            "tech": f"{base_url}/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en",
+            "finance": f"{base_url}/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
+            "sports": f"{base_url}/headlines/section/topic/SPORTS?hl=en-US&gl=US&ceid=US:en",
+            "ent": f"{base_url}/headlines/section/topic/ENTERTAINMENT?hl=en-US&gl=US&ceid=US:en",
+            "art": f"{base_url}/search?q=Arts+Culture+Design&hl=en-US&gl=US&ceid=US:en"
         }
-        
-        search_query = queries.get(category, queries["world"])
-        print(f"📰 [News] Deep Search Started ({category.upper()})... ({today})")
-        
-        if Config.SERPER_KEY:
-            try:
-                url = "https://google.serper.dev/news"
-                payload = json.dumps({
-                    "q": search_query, "gl": "us", "hl": "en", "num": 40, "tbs": "qdr:d"
-                })
-                headers = {'X-API-KEY': Config.SERPER_KEY, 'Content-Type': 'application/json'}
-                response = requests.post(url, headers=headers, data=payload, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    full_reports = []
-                    crawled_count = 0
-                    
-                    print(f"   👉 Search complete. Filtering for trusted '{category}' sources...")
-                    
-                    spam_keywords = ["betting", "odds", "promo code", "bonus", "gambling", "casino", "parlay", "picks", "prediction"]
 
-                    for item in data.get("news", []):
-                        if crawled_count >= 8: break
-                        
-                        title = item.get("title", "")
-                        snippet = item.get("snippet", "")
-                        link = item.get("link")
-                        source = item.get("source", "").lower()
-                        
-                        # 스팸 키워드 필터
-                        if any(spam in title.lower() for spam in spam_keywords):
-                            continue
-                        
-                        parsed_uri = urlparse(link)
-                        domain = parsed_uri.netloc.lower()
-                        if domain.startswith("www."): domain = domain[4:]
-                        
-                        is_trusted = False
-                        for trusted in self.TRUSTED_DOMAINS:
-                            if domain == trusted or domain.endswith("." + trusted) or trusted in source:
-                                is_trusted = True
-                                break
-                        
-                        if is_trusted:
-                            print(f"      📖 Reading ({crawled_count+1}~8): {title[:30]}...")
-                            article_content = self.get_news_from_url(link)
-                            
-                            if article_content:
-                                full_reports.append(f"--- ARTICLE {crawled_count+1} ({item.get('source')}) ---\n{article_content}\n")
-                                crawled_count += 1
-                                time.sleep(random.uniform(1.0, 2.5))
-                            else:
-                                # 크롤링 실패 시 스니펫 대체
-                                print(f"         ⚠️ Crawling failed. Using snippet backup.")
-                                backup_content = f"HEADLINE: {title}\nFULL TEXT: {snippet} (Source: {source})"
-                                full_reports.append(f"--- ARTICLE {crawled_count+1} ({item.get('source')}) ---\n{backup_content}\n")
-                                crawled_count += 1
-                    
-                    # [핵심 수정] 신뢰할 수 있는 기사가 0개면 -> RSS 백업으로 강제 전환
-                    if crawled_count == 0:
-                        print(f"   ⚠️ No trusted articles found. Switching to Premium RSS Feeds ({category})...")
-                        return self.get_rss_news(category)
-                    
-                    if full_reports:
-                        return "\n".join(full_reports)
-
-            except Exception as e:
-                print(f"   ⚠️ Serper Error ({e}) -> Switching to RSS Backup")
-
-        return self.get_rss_news(category)
-
-    # [업그레이드] RSS 피드를 카테고리별로 분리
-    def get_rss_news(self, category="world"):
-        print(f"   👉 Running RSS Feed Backup ({category.upper()})...")
-        
-        rss_map = {
-            "world": [
-                "http://rss.cnn.com/rss/edition.rss",
-                "http://feeds.bbci.co.uk/news/world/rss.xml",
-                "https://feeds.reuters.com/reuters/worldNews"
-            ],
-            "tech": [
-                "https://feeds.feedburner.com/TechCrunch/",
-                "https://www.wired.com/feed/rss",
-                "https://www.theverge.com/rss/index.xml"
-            ],
-            "finance": [
-                "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
-                "https://feeds.marketwatch.com/marketwatch/topstories/"
-            ],
-            "sports": [
-                "https://www.espn.com/espn/rss/news",               # ESPN Top News
-                "http://feeds.bbci.co.uk/sport/rss.xml",            # BBC Sports
-                "https://sports.yahoo.com/rss/"                     # Yahoo Sports
-            ],
-            "ent": [
-                "https://www.tmz.com/rss.xml",
-                "https://editorial.rottentomatoes.com/feed/"
-            ],
-            "art": [
-                "https://www.artnews.com/feed/",
-                "https://www.vogue.com/feed/rss"
-            ]
-        }
-        
-        rss_urls = rss_map.get(category, rss_map["world"])
-        
-        news_items = []
-        headers = {'User-Agent': random.choice(self.USER_AGENTS)}
-        
-        for url in rss_urls:
-            try:
-                resp = requests.get(url, headers=headers, timeout=5)
-                root = ET.fromstring(resp.content)
-                count = 0
-                for item in root.findall('.//item'):
-                    title = item.find('title').text
-                    desc = item.find('description').text
-                    if desc: desc = desc.split('<')[0]
-                    news_items.append(f"- {title}: {desc}")
-                    count += 1
-                    if count >= 4: break 
-                if len(news_items) >= 8: break
-            except: continue
-            
-        if not news_items: 
-            return "No news data available at the moment."
-        
-        print(f"   ✅ RSS Backup Success: Retrieved {len(news_items)} items.")
-        return "\n".join(news_items)
-
-    def get_news_from_url(self, url):
         try:
-            headers = {
-                'User-Agent': random.choice(self.USER_AGENTS),
-                'Referer': 'https://www.google.com/',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5'
-            }
+            target_url = rss_urls.get(category, rss_urls["world"])
+            feed = feedparser.parse(target_url)
             
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code != 200:
+            if not feed.entries:
+                print("   ⚠️ RSS feed empty. Switching to backup...")
+                return None
+
+            top_entries = feed.entries[:8]
+            news_context = f"Top {len(top_entries)} Headlines for {category.upper()} News ({datetime.now().strftime('%Y-%m-%d')}):\n\n"
+
+            for i, entry in enumerate(top_entries):
+                title = entry.title
+                desc = self.clean_html(entry.description) if 'description' in entry else ""
+                
+                news_context += f"{i+1}. {title}\n"
+                news_context += f"   - Snippet: {desc[:200]}...\n\n"
+                print(f"   📖 [RSS] Item {i+1}: {title[:40]}...")
+
+            return news_context
+
+        except Exception as e:
+            print(f"   ⚠️ RSS Error: {e}")
+            return None
+
+    # =========================================================================
+    # [Option 2] Serper Search & Snippet (2순위: Daily News 백업용)
+    # =========================================================================
+    def get_serper_backup(self, category="world"):
+        print(f"🔍 [News] Attempting Secondary Source: Serper Search ({category.upper()})...")
+        
+        url = "https://google.serper.dev/search"
+        query_map = {
+            "world": "top world news today",
+            "tech": "latest technology news today",
+            "finance": "top finance business news today",
+            "art": "latest arts and culture news today",
+            "sports": "top sports news headlines today",
+            "ent": "entertainment news headlines today"
+        }
+        
+        query = query_map.get(category, "latest news today")
+        payload = json.dumps({"q": query, "num": 10})
+        headers = {'X-API-KEY': Config.SERPER_KEY, 'Content-Type': 'application/json'}
+
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            results = response.json()
+            
+            if "organic" not in results:
+                print("   ❌ Backup search failed.")
                 return None
                 
-            article = Article(url)
-            article.download(input_html=response.text)
-            article.parse()
+            items = results["organic"]
+            news_context = f"[BACKUP SOURCE] Search Results for {category.upper()} News:\n\n"
             
-            if len(article.text) < 100: 
-                return None
-            
-            clean_text = article.text.strip()
-            return f"HEADLINE: {article.title}\nFULL TEXT: {clean_text[:3000]}..."
-            
+            count = 0
+            for item in items:
+                if count >= 8: break
+                title = item.get("title", "")
+                snippet = item.get("snippet", "")
+                link = item.get("link", "")
+                
+                if len(title) < 5: continue
+                
+                news_context += f"{count+1}. {title}\n"
+                news_context += f"   - Snippet: {snippet}\n"
+                news_context += f"   - Source: {link}\n\n"
+                print(f"   📖 [Backup] Item {count+1}: {title[:40]}...")
+                count += 1
+                
+            return news_context
+
         except Exception as e:
+            print(f"   ❌ Backup Error: {e}")
             return None
+
+    # =========================================================================
+    # 메인 호출 함수 (Main Entry Point)
+    # =========================================================================
+    def get_daily_news(self, category="world"):
+        # 1. RSS 시도
+        context = self.get_google_news_rss(category)
+        
+        # 2. 실패시 백업 시도
+        if not context:
+            print("⚠️ Primary (RSS) failed. Using Backup (Serper)...")
+            context = self.get_serper_backup(category)
+            
+        if not context:
+            print("❌ All news sources failed.")
+            return None
+            
+        return context
+
+    def get_specific_news(self, url):
+        """
+        [기능 추가] 특정 URL의 본문을 직접 긁어오는 Deep Crawling
+        """
+        print(f"🔗 [News] Deep Analyzing specific URL: {url}")
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        try:
+            # 5초 타임아웃을 두고 접속 시도
+            response = requests.get(url, headers=headers, timeout=10)
+            
+            # 403/404 등 에러 체크
+            if response.status_code != 200:
+                print(f"   ⚠️ URL Access Failed (Status: {response.status_code})")
+                return f"User provided specific URL: {url}. (Access denied, please generate generic script based on this topic)."
+
+            # HTML 태그 제거 및 텍스트 정제
+            clean_text = self.clean_html(response.text)
+            
+            # 본문이 너무 길면 AI 토큰 절약을 위해 앞부분 4000자만 사용
+            final_text = clean_text[:4000]
+            
+            print(f"   ✅ Content fetched successfully ({len(final_text)} chars)")
+            return f"Source Article Content from {url}:\n\n{final_text}..."
+
+        except Exception as e:
+            print(f"   ❌ URL Crawling Error: {e}")
+            # 크롤링 실패 시에도 에러로 죽지 않고, URL 주제로 대본을 쓰도록 유도
+            return f"User provided specific URL: {url}. (Crawling failed due to {e}, please generate script based on this link's context)."

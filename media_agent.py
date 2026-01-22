@@ -37,7 +37,7 @@ class MediaAgent:
     }
 
     # =========================================================================
-    # 1. 이미지 다운로드 (재시도 로직 추가)
+    # 1. 이미지 다운로드 (재시도 로직 유지)
     # =========================================================================
     def _download_logic(self, query, filename, min_width=800):
         """
@@ -199,8 +199,10 @@ class MediaAgent:
         
         print(f"🎙️ [Media] Audio Strategy (Neural2 / 1.1x): 1.GCP -> 2.Gemini -> 3.Edge")
 
-        intro_txt = data.get('intro_narration', "Welcome.")
-        outro_txt = data.get('outro_narration', "Subscribe.")
+        # [수정 포인트] 여기서 별표(*)를 제거합니다.
+        # 이렇게 하면 자막에는 *가 남아있지만, 오디오에서는 사라집니다.
+        intro_txt = data.get('intro_narration', "Welcome.").replace("*", "")
+        outro_txt = data.get('outro_narration', "Subscribe.").replace("*", "")
         scenes = data['script']['scenes']
 
         async def _run():
@@ -223,7 +225,9 @@ class MediaAgent:
 
             await generate_final(intro_txt, "audio/intro.mp3")
             for i, scene in enumerate(scenes):
-                await generate_final(scene['narration'], f"audio/audio_{i+1}.mp3")
+                # [수정 포인트] 씬 내레이션에서도 별표 제거
+                clean_narration = scene['narration'].replace("*", "")
+                await generate_final(clean_narration, f"audio/audio_{i+1}.mp3")
             await generate_final(outro_txt, "audio/outro.mp3")
 
         asyncio.run(_run())

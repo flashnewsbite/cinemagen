@@ -37,7 +37,7 @@ class MediaAgent:
     }
 
     # =========================================================================
-    # 1. 이미지 다운로드 (스마트 필터링 유지)
+    # 1. 이미지 다운로드
     # =========================================================================
     def search_and_download_image(self, query, filename):
         url = "https://google.serper.dev/images"
@@ -98,15 +98,15 @@ class MediaAgent:
     # 2. TTS 엔진들 (속도 1.1배 적용)
     # =========================================================================
     
-    # [Option A] Google Cloud TTS (1순위: 고품질)
-    def try_gcp_tts(self, text, filename, voice_name="en-US-Journey-F"):
+    # [Option A] Google Cloud TTS (1순위: 가성비 Neural2)
+    # [변경] 기본값을 Neural2로 변경했습니다.
+    def try_gcp_tts(self, text, filename, voice_name="en-US-Neural2-F"):
         if not self.has_gcp: return False
         try:
             client = texttospeech.TextToSpeechClient()
             input_text = texttospeech.SynthesisInput(text=text)
             voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=voice_name)
             
-            # [수정] speaking_rate=1.1 (1.1배 속도)
             audio_config = texttospeech.AudioConfig(
                 audio_encoding=texttospeech.AudioEncoding.MP3,
                 speaking_rate=1.1 
@@ -154,7 +154,6 @@ class MediaAgent:
     # [Option C] Edge TTS (3순위: 최후의 보루)
     async def try_edge_tts(self, text, filename, voice_name):
         try:
-            # [수정] rate="+10%" (1.1배 속도)
             communicate = edge_tts.Communicate(text, voice_name, rate="+10%")
             await communicate.save(filename)
             if os.path.exists(filename) and os.path.getsize(filename) > 0:
@@ -167,12 +166,14 @@ class MediaAgent:
     # 3. 통합 오디오 생성 (우선순위: GCP -> Gemini -> Edge)
     # =========================================================================
     def get_audio(self, data, gender="female", tone="2"):
-        # 목소리 설정
-        gcp_voice = "en-US-Journey-F" if gender == "female" else "en-US-Journey-D" 
+        # [변경] 목소리 설정: Neural2로 교체 (F:Female, D:Male)
+        gcp_voice = "en-US-Neural2-F" if gender == "female" else "en-US-Neural2-D" 
+        
         gemini_voice = self.GEMINI_VOICES.get(gender).get(tone, "Kore")
         edge_voice = self.EDGE_VOICES.get(gender).get(tone, "en-US-JennyNeural")
         
-        print(f"🎙️ [Media] Audio Strategy (Speed 1.1x): 1.GCP -> 2.Gemini -> 3.Edge")
+        # 로그 메시지 수정 (Neural2 사용 명시)
+        print(f"🎙️ [Media] Audio Strategy (Neural2 / 1.1x): 1.GCP -> 2.Gemini -> 3.Edge")
 
         intro_txt = data.get('intro_narration', "Welcome.")
         outro_txt = data.get('outro_narration', "Subscribe.")
@@ -180,18 +181,15 @@ class MediaAgent:
 
         async def _run():
             async def generate_final(text, filename):
-                # 1순위: GCP TTS (최고품질)
                 if self.try_gcp_tts(text, filename, gcp_voice):
-                    print(f"   ✅ GCP TTS: {filename}")
+                    print(f"   ✅ GCP TTS (Neural2): {filename}")
                     return
 
-                # 2순위: Gemini TTS (GCP 실패 시)
                 print(f"   ⚠️ GCP failed. Switching to Gemini...")
                 if self.try_gemini_tts(text, filename, gemini_voice):
                     print(f"   ✅ Gemini TTS: {filename}")
                     return
                 
-                # 3순위: Edge TTS (최후의 수단)
                 print(f"   ⚠️ Gemini failed. Switching to Edge...")
                 if await self.try_edge_tts(text, filename, edge_voice):
                     print(f"   ✅ Edge TTS: {filename}")

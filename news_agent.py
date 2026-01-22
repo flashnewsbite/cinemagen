@@ -47,7 +47,7 @@ class NewsAgent:
     ]
 
     def get_daily_news(self, category="world"):
-        today = date.today().strftime("%Y-%m-%d")
+        today = date.today().strftime("%m-%d-%Y")
         
         # 검색어 튜닝 (광고 필터링)
         queries = {

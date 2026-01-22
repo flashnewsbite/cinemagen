@@ -78,7 +78,7 @@ def main():
         context = ""
         if news_mode == "url":
             print(f"📰 [News] Fetching content from URL...")
-            context = news_agent.get_specific_news(target_url)
+            context = news_agent.get_news_from_url(target_url)
         else:
             # get_daily_news 함수 내부의 로그들이 여기서 출력됨
             context = news_agent.get_daily_news(category=target_category)

@@ -33,12 +33,13 @@ class Editor:
     def clean_text(self, text):
         """
         [수정됨] 텍스트 정제 함수
-        - 기존: 알파벳, 숫자, 기본 문장부호만 허용
-        - 추가: '%' 기호를 허용 목록에 포함시켜 "7%"가 "7"로 잘리는 문제 해결
+        - '2026' 삭제 로직 제거 (이제 연도가 정상 표시됨)
+        - '%' 기호 허용
         """
         if not text: return ""
-        text = text.replace("2026", "")
-        # [핵심 수정] 정규표현식 [] 안에 % 추가
+        # [삭제됨] text = text.replace("2026", "")  <-- 범인 삭제 완료
+        
+        # 허용 문자: 알파벳, 숫자, 공백, 문장부호, 괄호, 한글, 그리고 %
         pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
         clean_text = re.sub(pattern, '', text)
         return clean_text.strip()
@@ -202,8 +203,9 @@ class Editor:
         print(f"🎬 [Editor] Creating Video with Pause ({PAUSE_DURATION}s)...")
         scenes = data['script']['scenes']
         
-        # 날짜 제거 로직
-        raw_title = data.get('title', "News Update").replace("2026", "")
+        # [수정] 제목에서도 '2026' 강제 삭제 로직 제거
+        raw_title = data.get('title', "News Update")
+        # 날짜 포맷(MM-DD)만 제거하고, 연도(YYYY)는 살려둠
         final_title = re.sub(r'-?\d{2}-\d{2}', '', raw_title).strip()
         final_title = final_title.strip('-').strip()
         

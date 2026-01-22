@@ -4,14 +4,16 @@ import json
 import requests
 from datetime import datetime
 from config import Config
+# [NEW] Playwright 라이브러리 임포트 (설치 필요: pip install playwright && playwright install)
+from playwright.sync_api import sync_playwright
 
 class NewsAgent:
     def __init__(self):
         pass
 
     def clean_html(self, raw_html):
-        """HTML 태그 및 불필요한 공백 제거"""
-        # 1. 스크립트/스타일 태그 내용 제거 (본문과 섞이지 않게)
+        """RSS Feed용: HTML 태그 및 불필요한 공백 제거"""
+        # 1. 스크립트/스타일 태그 내용 제거
         script_pattern = re.compile(r'<(script|style).*?>.*?</\1>', re.DOTALL)
         text = re.sub(script_pattern, ' ', raw_html)
         
@@ -23,7 +25,7 @@ class NewsAgent:
         return " ".join(cleantext.split())
 
     # =========================================================================
-    # [Option 1] Google News RSS (1순위: Daily News용)
+    # [Option 1] Google News RSS (유지)
     # =========================================================================
     def get_google_news_rss(self, category="world"):
         print(f"📡 [News] Attempting Primary Source: Google News RSS ({category.upper()})...")
@@ -64,7 +66,7 @@ class NewsAgent:
             return None
 
     # =========================================================================
-    # [Option 2] Serper Search & Snippet (2순위: Daily News 백업용)
+    # [Option 2] Serper Search & Snippet (유지)
     # =========================================================================
     def get_serper_backup(self, category="world"):
         print(f"🔍 [News] Attempting Secondary Source: Serper Search ({category.upper()})...")
@@ -135,33 +137,47 @@ class NewsAgent:
 
     def get_specific_news(self, url):
         """
-        [기능 추가] 특정 URL의 본문을 직접 긁어오는 Deep Crawling
+        [UPGRADED] Playwright를 사용하여 실제 브라우저처럼 접속 후 본문 추출
         """
-        print(f"🔗 [News] Deep Analyzing specific URL: {url}")
+        print(f"🔗 [News] Deep Analyzing specific URL with Playwright: {url}")
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-
         try:
-            # 5초 타임아웃을 두고 접속 시도
-            response = requests.get(url, headers=headers, timeout=10)
-            
-            # 403/404 등 에러 체크
-            if response.status_code != 200:
-                print(f"   ⚠️ URL Access Failed (Status: {response.status_code})")
-                return f"User provided specific URL: {url}. (Access denied, please generate generic script based on this topic)."
+            # Playwright 브라우저 실행
+            with sync_playwright() as p:
+                # headless=True: 브라우저 창을 띄우지 않고 백그라운드에서 실행 (빠름)
+                # headless=False: 브라우저가 뜨는 것을 눈으로 확인 가능 (디버깅용)
+                browser = p.chromium.launch(headless=True)
+                
+                # 모바일 뷰포트나 특정 User-Agent를 설정하여 봇 탐지 회피 가능성 높임
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    viewport={'width': 1920, 'height': 1080}
+                )
+                
+                page = context.new_page()
+                
+                # 페이지 이동 (최대 30초 대기)
+                print("   ⏳ Loading page...")
+                page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                
+                # 본문 내용 추출 (body 태그 내부의 순수 텍스트만 가져옴)
+                # inner_text()는 숨겨진 요소나 스크립트를 제외하고 실제 보이는 텍스트만 가져옵니다.
+                content_text = page.locator("body").inner_text()
+                
+                browser.close()
 
-            # HTML 태그 제거 및 텍스트 정제
-            clean_text = self.clean_html(response.text)
-            
-            # 본문이 너무 길면 AI 토큰 절약을 위해 앞부분 4000자만 사용
-            final_text = clean_text[:4000]
-            
-            print(f"   ✅ Content fetched successfully ({len(final_text)} chars)")
-            return f"Source Article Content from {url}:\n\n{final_text}..."
+                # 텍스트가 너무 짧으면 실패로 간주
+                if len(content_text) < 200:
+                    raise Exception("Extracted content is too short (Block suspected).")
+
+                # AI 토큰 절약을 위해 4000자 제한
+                final_text = content_text[:4000]
+                # 불필요한 연속 공백 제거
+                final_text = " ".join(final_text.split())
+
+                print(f"   ✅ Content fetched successfully ({len(final_text)} chars)")
+                return f"Source Article Content from {url}:\n\n{final_text}..."
 
         except Exception as e:
-            print(f"   ❌ URL Crawling Error: {e}")
-            # 크롤링 실패 시에도 에러로 죽지 않고, URL 주제로 대본을 쓰도록 유도
+            print(f"   ❌ Browser Crawling Error: {e}")
             return f"User provided specific URL: {url}. (Crawling failed due to {e}, please generate script based on this link's context)."

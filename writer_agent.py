@@ -24,12 +24,19 @@ class WriterAgent:
         [Input Context]
         {context}
 
-        [⚠️ LANGUAGE RULES - CRITICAL]
+        [⚠️ TITLE RULES - CRITICAL]
+        1. **VIRAL HOOK ONLY:** The title MUST be specific and shocking. (e.g., "Apple Buys OpenAI?", "Bitcoin Crashes!", "New AI King?")
+        2. **NO GENERIC WORDS:** STRICTLY FORBIDDEN to use: "News", "Update", "Digest", "Daily", "Flash", "Report", "Summaries".
+        3. **NO CHANNEL NAME:** Do not include "Flash News Bite" or any branding.
+        4. **NO DATES:** Do not include the date (e.g., -01-22).
+        5. **LENGTH:** MAX 6-8 Words. Short & Punchy.
+
+        [⚠️ LANGUAGE RULES]
         - **ALL Output MUST be in ENGLISH.**
 
         [⏱️ TIMING & CONTENT RULES]
-        1. **Intro**: MAX 3 SECONDS. (e.g., "Flash News: AI takes over!")
-        2. **Outro**: MAX 3 SECONDS. (e.g., "Sub for more!")
+        1. **Intro**: MAX 3 SECONDS. (e.g., "You won't believe this.")
+        2. **Outro**: MAX 3 SECONDS. (e.g., "Subscribe for more.")
         3. **Narration**: Fast-paced, concise. Max 2 short sentences per scene.
 
         [Highlighting Rules]
@@ -37,7 +44,7 @@ class WriterAgent:
 
         [Output Format - JSON Only]
         {{
-            "title": "Short Video Title",
+            "title": "Specific & Viral Title (e.g. Apple & Google Merger?)",
             "intro_narration": "Very short intro...",
             "outro_narration": "Very short outro...",
             "script": {{
@@ -68,7 +75,6 @@ class WriterAgent:
                 model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=Config.SAFETY_SETTINGS)
                 
                 # [수정] 타임아웃(request_options) 추가: 15초 동안 응답 없으면 에러 처리
-                # 이렇게 해야 프로그램이 무한히 멈추는 것을 방지함
                 response = model.generate_content(
                     prompt, 
                     generation_config={"response_mime_type": "application/json"},

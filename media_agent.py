@@ -95,7 +95,7 @@ class MediaAgent:
                 Image.new('RGB', (1280, 720), (20,30,60)).save(f"images/image_{idx}.png")
 
     # =========================================================================
-    # 2. TTS 엔진들 (속도 1.2배 적용)
+    # 2. TTS 엔진들 (속도 1.1배 적용)
     # =========================================================================
     
     # [Option A] Google Cloud TTS (1순위: 고품질)
@@ -106,10 +106,10 @@ class MediaAgent:
             input_text = texttospeech.SynthesisInput(text=text)
             voice = texttospeech.VoiceSelectionParams(language_code="en-US", name=voice_name)
             
-            # [수정] speaking_rate=1.2 (1.2배 속도)
+            # [수정] speaking_rate=1.1 (1.1배 속도)
             audio_config = texttospeech.AudioConfig(
                 audio_encoding=texttospeech.AudioEncoding.MP3,
-                speaking_rate=1.2 
+                speaking_rate=1.1 
             )
             
             response = client.synthesize_speech(input=input_text, voice=voice, audio_config=audio_config)
@@ -172,7 +172,7 @@ class MediaAgent:
         gemini_voice = self.GEMINI_VOICES.get(gender).get(tone, "Kore")
         edge_voice = self.EDGE_VOICES.get(gender).get(tone, "en-US-JennyNeural")
         
-        print(f"🎙️ [Media] Audio Strategy (Speed 1.2x): 1.GCP -> 2.Gemini -> 3.Edge")
+        print(f"🎙️ [Media] Audio Strategy (Speed 1.1x): 1.GCP -> 2.Gemini -> 3.Edge")
 
         intro_txt = data.get('intro_narration', "Welcome.")
         outro_txt = data.get('outro_narration', "Subscribe.")

@@ -1,6 +1,6 @@
 @echo off
 :: 프로젝트 폴더로 이동 (경로가 맞는지 확인하세요)
-cd /d "C:\Users\parkm\cinemagen"
+cd /d "C:\Users\Sales01\.gemini\antigravity\CinemaGen"
 
 :: 프로그램 실행
 python main.py

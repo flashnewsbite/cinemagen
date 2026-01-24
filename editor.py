@@ -37,7 +37,7 @@ class Editor:
         - '%' 기호 허용
         """
         if not text: return ""
-        # [삭제됨] text = text.replace("2026", "")  <-- 범인 삭제 완료
+        # 2026 삭제 로직 제거됨
         
         # 허용 문자: 알파벳, 숫자, 공백, 문장부호, 괄호, 한글, 그리고 %
         pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
@@ -192,10 +192,11 @@ class Editor:
             logo_y = H - logo.size[1] - 30
             canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
 
-        # 4. Subtitle 배치
-        self.draw_text_with_highlight(
-            draw, narration_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text'
-        )
+        # 4. Subtitle 배치 (내용이 없으면 안 그림)
+        if narration_lines:
+            self.draw_text_with_highlight(
+                draw, narration_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text'
+            )
 
         return ImageClip(np.array(canvas)).set_duration(duration)
 
@@ -203,20 +204,35 @@ class Editor:
         print(f"🎬 [Editor] Creating Video with Pause ({PAUSE_DURATION}s)...")
         scenes = data['script']['scenes']
         
-        # [수정] 제목에서도 '2026' 강제 삭제 로직 제거
         raw_title = data.get('title', "News Update")
-        # 날짜 포맷(MM-DD)만 제거하고, 연도(YYYY)는 살려둠
         final_title = re.sub(r'-?\d{2}-\d{2}', '', raw_title).strip()
         final_title = final_title.strip('-').strip()
         
         clips = []
+
+        # =====================================================================
+        # [NEW] 0. Thumbnail Trick (0.1초 표지 생성)
+        # =====================================================================
+        thumb_img_path = "images/image_1.png"
+        if os.path.exists(thumb_img_path):
+            print("📸 [Editor] Creating 0.1s Thumbnail Clip...")
+            # create_layout_clip을 재활용하되, 자막(Narration)은 빈 리스트([])로 넘김
+            # 결과: 제목 + 이미지만 있는 깔끔한 표지 생성
+            thumb_clip = self.create_layout_clip(
+                [], 
+                thumb_img_path, 
+                0.1,  # 0.1초 (틱톡 썸네일 인식용)
+                final_title
+            )
+            clips.append(thumb_clip)
+        # =====================================================================
         
-        # Intro
+        # 1. Intro
         intro_text = data.get('intro_narration', "Welcome to Flash News Bite.")
         intro = self.process_special_clip("assets/intro.mp4", "audio/intro.mp3", intro_text, final_title)
         if intro: clips.append(intro)
 
-        # Main Scenes
+        # 2. Main Scenes
         for i, scene in enumerate(scenes):
             idx = i + 1
             aud_path = f"audio/audio_{idx}.mp3"
@@ -258,11 +274,12 @@ class Editor:
                 clip = self.create_layout_clip(page_lines, img_path, clip_duration, final_title)
                 clips.append(clip.set_audio(sub_audio))
 
-        # Outro
+        # 3. Outro
         outro_text = data.get('outro_narration', "Thanks for watching.")
         outro = self.process_special_clip("assets/outro.mp4", "audio/outro.mp3", outro_text, final_title)
         if outro: clips.append(outro)
 
+        # Final Render
         final = concatenate_videoclips(clips, method="compose")
         
         suffix = {"world": "USWORLD", "tech": "TECH", "finance": "FINANCE", "art": "ARTS", "sports": "SPORTS", "ent": "ENT"}.get(category, "USWORLD")

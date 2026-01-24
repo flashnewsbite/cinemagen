@@ -5,6 +5,7 @@ from PIL import Image, ImageFont, ImageDraw
 # PIL.Image.ANTIALIAS가 최신 버전에서 삭제되어 LANCZOS로 대체
 if not hasattr(Image, 'ANTIALIAS'): Image.ANTIALIAS = Image.LANCZOS
 from moviepy.editor import *
+from moviepy.audio.AudioClip import CompositeAudioClip
 import numpy as np
 import textwrap
 
@@ -31,12 +32,8 @@ class Editor:
             self.font_sub = ImageFont.load_default()
 
     def clean_text(self, text):
-        """
-        [수정됨] 텍스트 정제 함수
-        """
         if not text: return ""
-        # 2026 삭제 로직 제거됨
-        # '%' 기호 허용
+        # 2026 삭제 로직 제거됨, % 허용
         pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
         clean_text = re.sub(pattern, '', text)
         return clean_text.strip()
@@ -98,37 +95,84 @@ class Editor:
                 current_x += part_w
             current_y += line_height
 
-    def create_overlay_image(self, title, subtitle, duration):
+    # -------------------------------------------------------------------------
+    # [NEW] 1. 배경 레이어 생성 (이미지 줌인 + 제목 + 로고) - 자막 없음
+    # -------------------------------------------------------------------------
+    def create_base_layer(self, img_path, video_title, duration):
         W, H = 720, 1280
-        canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(canvas)
         
-        # 1. 로고 배치
-        if os.path.exists("assets/logo.png"):
-            logo = Image.open("assets/logo.png").convert("RGBA")
-            logo.thumbnail((150, 150), Image.LANCZOS)
-            logo_y = H - logo.size[1] - 30
-            canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
+        # 1. 배경 이미지 (줌인 효과)
+        bg_clip = None
+        if os.path.exists(img_path):
+            img = Image.open(img_path).convert("RGB")
+            # 비율 크롭
+            target_ratio = 4/3
+            iw, ih = img.size
+            if iw/ih > target_ratio:
+                new_w = int(ih * target_ratio)
+                img = img.crop(((iw-new_w)//2, 0, (iw-new_w)//2+new_w, ih))
+            else:
+                new_h = int(iw / target_ratio)
+                img = img.crop((0, (ih-new_h)//2, iw, (ih-new_h)//2+new_h))
+            img = img.resize((W, int(W/target_ratio)), Image.LANCZOS)
+            
+            # 줌인 로직
+            def zoom_effect(t):
+                scale = 1.0 + (0.04 * t) # 초당 4% 확대
+                return scale
 
-        # 2. Title 배치
-        title = self.auto_highlight_title(self.clean_text(title))
-        title_lines = textwrap.wrap(title, width=22)
+            raw_clip = ImageClip(np.array(img)).set_duration(duration)
+            bg_clip = raw_clip.resize(zoom_effect).set_position('center')
+            
+            # 레터박스 배경
+            bg_base = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
+            bg_clip = CompositeVideoClip([bg_base, bg_clip])
+        else:
+            bg_clip = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
+
+        # 2. 고정 텍스트 레이어 (제목 + 로고)
+        text_canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(text_canvas)
+
+        # 제목
+        video_title = self.auto_highlight_title(self.clean_text(video_title))
+        title_lines = textwrap.wrap(video_title, width=22)
         self.draw_text_with_highlight(
             draw, title_lines, (W//2, FIXED_TITLE_Y), self.font_title, W, highlight_style='box'
         )
         
-        # 3. Subtitle 배치
-        if subtitle:
-            sub_lines = textwrap.wrap(self.clean_text(subtitle), width=28)
+        # 로고
+        if os.path.exists("assets/logo.png"):
+            logo = Image.open("assets/logo.png").convert("RGBA")
+            logo.thumbnail((150, 150), Image.LANCZOS)
+            logo_y = H - logo.size[1] - 30
+            text_canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
+
+        fixed_layer = ImageClip(np.array(text_canvas)).set_duration(duration)
+        
+        # 배경 + 고정 텍스트 합체
+        return CompositeVideoClip([bg_clip, fixed_layer])
+
+    # -------------------------------------------------------------------------
+    # [NEW] 2. 자막 레이어 생성 (투명 배경에 자막만)
+    # -------------------------------------------------------------------------
+    def create_subtitle_clip(self, text_lines, duration):
+        W, H = 720, 1280
+        canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
+        
+        if text_lines:
             self.draw_text_with_highlight(
-                draw, sub_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text'
+                draw, text_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text'
             )
             
         return ImageClip(np.array(canvas)).set_duration(duration)
 
+    # -------------------------------------------------------------------------
+    # [Helper] 인트로/아웃트로 처리 (기존 로직 유지)
+    # -------------------------------------------------------------------------
     def process_special_clip(self, video_path, audio_path, text_content, full_title):
         if not os.path.exists(video_path): return None
-        
         video = VideoFileClip(video_path).resize(width=720)
         
         if os.path.exists(audio_path):
@@ -144,86 +188,30 @@ class Editor:
         
         bg = ColorClip(size=(720, 1280), color=(0, 0, 0)).set_duration(video.duration)
         video_centered = video.set_position("center")
-        overlay = self.create_overlay_image(full_title, text_content, video.duration)
-        return CompositeVideoClip([bg, video_centered, overlay])
-
-    def create_layout_clip(self, narration_lines, img_path, duration, video_title):
-        W, H = 720, 1280
         
-        # ---------------------------------------------------------------------
-        # [NEW] Dynamic Ken Burns Effect (Zoom In)
-        # ---------------------------------------------------------------------
-        # 배경(자막, 로고)은 투명한 레이어로 따로 만듭니다.
-        text_canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(text_canvas)
-
-        # 1. Title 배치
-        video_title = self.auto_highlight_title(self.clean_text(video_title))
-        title_lines = textwrap.wrap(video_title, width=22)
-        self.draw_text_with_highlight(
-            draw, title_lines, (W//2, FIXED_TITLE_Y), self.font_title, W, highlight_style='box'
-        )
-
-        # 2. 로고 배치
+        # 인트로용 오버레이는 기존 방식 사용
+        W, H = 720, 1280
+        canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(canvas)
         if os.path.exists("assets/logo.png"):
             logo = Image.open("assets/logo.png").convert("RGBA")
             logo.thumbnail((150, 150), Image.LANCZOS)
             logo_y = H - logo.size[1] - 30
-            text_canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
+            canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
 
-        # 3. Subtitle 배치
-        if narration_lines:
-            self.draw_text_with_highlight(
-                draw, narration_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text'
-            )
+        title = self.auto_highlight_title(self.clean_text(full_title))
+        title_lines = textwrap.wrap(title, width=22)
+        self.draw_text_with_highlight(draw, title_lines, (W//2, FIXED_TITLE_Y), self.font_title, W, highlight_style='box')
         
-        # 텍스트 레이어를 클립으로 변환
-        text_clip = ImageClip(np.array(text_canvas)).set_duration(duration)
+        if text_content:
+            sub_lines = textwrap.wrap(self.clean_text(text_content), width=28)
+            self.draw_text_with_highlight(draw, sub_lines, (W//2, FIXED_SUBTITLE_Y), self.font_sub, W, highlight_style='text')
 
-        # 4. 이미지(배경) 처리 - 줌인 효과 적용
-        bg_clip = None
-        if os.path.exists(img_path):
-            img = Image.open(img_path).convert("RGB")
-            
-            # 이미지 비율 맞추기 (Crop)
-            target_ratio = 4/3
-            iw, ih = img.size
-            if iw/ih > target_ratio:
-                new_w = int(ih * target_ratio)
-                img = img.crop(((iw-new_w)//2, 0, (iw-new_w)//2+new_w, ih))
-            else:
-                new_h = int(iw / target_ratio)
-                img = img.crop((0, (ih-new_h)//2, iw, (ih-new_h)//2+new_h))
-            
-            # 기본 크기보다 약간 크게 리사이즈 (줌 할 공간 확보)
-            img = img.resize((W, int(W/target_ratio)), Image.LANCZOS)
-            
-            # [핵심] 줌인 효과 함수
-            # t=0일 때 1.0배(원본) -> t=duration일 때 1.15배(확대)
-            def zoom_effect(t):
-                scale = 1.0 + (0.04 * t)  # 초당 4% 확대
-                return scale
-
-            # 이미지를 클립으로 만들고 중앙 정렬 후 줌 적용
-            raw_clip = ImageClip(np.array(img)).set_duration(duration)
-            
-            # MoviePy의 resize를 이용해 시간(t)에 따라 크기 변화
-            # 'center' 위치 고정하며 확대
-            bg_clip = raw_clip.resize(zoom_effect).set_position('center')
-            
-            # 검은 배경 위에 얹어서 레터박스 처리
-            bg_base = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
-            bg_clip = CompositeVideoClip([bg_base, bg_clip])
-
-        else:
-            # 이미지가 없으면 그냥 검은 배경
-            bg_clip = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
-
-        # 최종 합성: [움직이는 배경] + [고정된 자막]
-        return CompositeVideoClip([bg_clip, text_clip])
+        overlay = ImageClip(np.array(canvas)).set_duration(video.duration)
+        return CompositeVideoClip([bg, video_centered, overlay])
 
     def make_shorts(self, data, category="world"):
-        print(f"🎬 [Editor] Creating Video with Pause ({PAUSE_DURATION}s)...")
+        print(f"🎬 [Editor] Creating Video with Continuous Zoom...")
         scenes = data['script']['scenes']
         
         raw_title = data.get('title', "News Update")
@@ -232,27 +220,20 @@ class Editor:
         
         clips = []
 
-        # =====================================================================
-        # 0. Thumbnail Trick (0.1초 표지 생성)
-        # =====================================================================
+        # 0. Thumbnail Trick (0.1s)
         thumb_img_path = "images/image_1.png"
         if os.path.exists(thumb_img_path):
-            print("📸 [Editor] Creating 0.1s Thumbnail Clip...")
-            thumb_clip = self.create_layout_clip(
-                [], 
-                thumb_img_path, 
-                0.1, 
-                final_title
-            )
+            print("📸 [Editor] Creating Thumbnail...")
+            # 썸네일은 정지 화면이므로 create_base_layer 사용
+            thumb_clip = self.create_base_layer(thumb_img_path, final_title, 0.1)
             clips.append(thumb_clip)
-        # =====================================================================
         
         # 1. Intro
         intro_text = data.get('intro_narration', "Welcome to Flash News Bite.")
         intro = self.process_special_clip("assets/intro.mp4", "audio/intro.mp3", intro_text, final_title)
         if intro: clips.append(intro)
 
-        # 2. Main Scenes
+        # 2. Main Scenes (핵심 수정 구간)
         for i, scene in enumerate(scenes):
             idx = i + 1
             aud_path = f"audio/audio_{idx}.mp3"
@@ -262,6 +243,7 @@ class Editor:
             full_audio = AudioFileClip(aud_path)
             narr_text = scene.get('narration', "")
             
+            # 텍스트 페이지 나누기 계산
             all_lines = textwrap.wrap(narr_text, width=28)
             num_pages = (len(all_lines) + 3) // 4
             if num_pages < 1: num_pages = 1
@@ -277,21 +259,41 @@ class Editor:
                 pages.append(all_lines[curr : curr + cnt])
                 curr += cnt
             
-            dur_per_page = full_audio.duration / len(pages)
+            # [중요] 씬의 전체 길이 계산 (오디오 길이 + 휴식 시간)
+            total_scene_duration = full_audio.duration + PAUSE_DURATION
+            
+            # A. 베이스 레이어 생성 (긴 배경 영상 하나 생성)
+            base_clip = self.create_base_layer(img_path, final_title, total_scene_duration)
+            
+            # B. 자막 오버레이들 생성
+            overlays = []
+            dur_per_page = full_audio.duration / len(pages) # 자막 한 페이지당 지속시간
             
             for p_idx, page_lines in enumerate(pages):
-                start = p_idx * dur_per_page
-                end = min((p_idx + 1) * dur_per_page, full_audio.duration)
+                start_time = p_idx * dur_per_page
                 
-                sub_audio = full_audio.subclip(start, end)
-                
-                clip_duration = sub_audio.duration
+                # 마지막 페이지면 Pause 시간까지 포함해서 보여줌
                 if p_idx == len(pages) - 1:
-                    clip_duration += PAUSE_DURATION
+                    sub_duration = dur_per_page + PAUSE_DURATION
+                else:
+                    sub_duration = dur_per_page
                 
-                # 줌인 효과가 적용된 클립 생성
-                clip = self.create_layout_clip(page_lines, img_path, clip_duration, final_title)
-                clips.append(clip.set_audio(sub_audio))
+                # 자막 클립 생성 (투명 배경)
+                sub_clip = self.create_subtitle_clip(page_lines, sub_duration)
+                
+                # 시작 시간 설정하여 오버레이 리스트에 추가
+                sub_clip = sub_clip.set_start(start_time).set_position('center')
+                overlays.append(sub_clip)
+            
+            # C. 합성 (베이스 + 자막들)
+            # 결과: 배경은 쭉 이어지고, 자막만 시간 맞춰서 교체됨
+            scene_clip = CompositeVideoClip([base_clip] + overlays)
+            
+            # D. 오디오 설정 (뒤에 무음 구간 추가 필요 없음, 영상 길이가 이미 길어서 자동 처리됨)
+            # 단, 오디오가 영상보다 짧으므로 set_audio 시 뒷부분 무음 처리됨
+            scene_clip = scene_clip.set_audio(full_audio)
+            
+            clips.append(scene_clip)
 
         # 3. Outro
         outro_text = data.get('outro_narration', "Thanks for watching.")

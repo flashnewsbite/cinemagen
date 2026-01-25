@@ -33,7 +33,6 @@ class Editor:
 
     def clean_text(self, text):
         if not text: return ""
-        # 2026 삭제 로직 제거됨, % 허용
         pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
         clean_text = re.sub(pattern, '', text)
         return clean_text.strip()
@@ -96,16 +95,18 @@ class Editor:
             current_y += line_height
 
     # -------------------------------------------------------------------------
-    # [NEW] 1. 배경 레이어 생성 (이미지 줌인 + 제목 + 로고) - 자막 없음
+    # [NEW] 1. 배경 레이어 생성 (액자 방식 줌인)
     # -------------------------------------------------------------------------
     def create_base_layer(self, img_path, video_title, duration):
         W, H = 720, 1280
         
-        # 1. 배경 이미지 (줌인 효과)
-        bg_clip = None
+        # 1. 배경 이미지 (액자 안에서만 줌인)
+        final_bg_clip = None
+        
         if os.path.exists(img_path):
             img = Image.open(img_path).convert("RGB")
-            # 비율 크롭
+            
+            # (A) 이미지 비율 맞추기 (4:3)
             target_ratio = 4/3
             iw, ih = img.size
             if iw/ih > target_ratio:
@@ -114,21 +115,31 @@ class Editor:
             else:
                 new_h = int(iw / target_ratio)
                 img = img.crop((0, (ih-new_h)//2, iw, (ih-new_h)//2+new_h))
-            img = img.resize((W, int(W/target_ratio)), Image.LANCZOS)
             
-            # 줌인 로직
+            # 여기서 4:3 박스의 정확한 높이를 구함 (너비는 720 고정)
+            box_height = int(W / target_ratio) # 720 / (4/3) = 540px
+            img = img.resize((W, box_height), Image.LANCZOS)
+            
+            # (B) 줌인 효과 정의
             def zoom_effect(t):
                 scale = 1.0 + (0.04 * t) # 초당 4% 확대
                 return scale
 
+            # (C) 줌인 클립 생성
             raw_clip = ImageClip(np.array(img)).set_duration(duration)
-            bg_clip = raw_clip.resize(zoom_effect).set_position('center')
+            zooming_clip = raw_clip.resize(zoom_effect).set_position('center')
             
-            # 레터박스 배경
+            # (D) [핵심] 액자(Container) 만들기
+            # CompositeVideoClip의 size를 지정하면, 그 크기를 벗어나는 내용은 자동으로 잘림(Crop)
+            # 즉, 720x540 크기의 상자 안에 점점 커지는 이미지를 가둬둠
+            img_container = CompositeVideoClip([zooming_clip], size=(W, box_height))
+            
+            # (E) 전체 검은 배경(1280h) 위에 액자(540h)를 중앙 배치
             bg_base = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
-            bg_clip = CompositeVideoClip([bg_base, bg_clip])
+            final_bg_clip = CompositeVideoClip([bg_base, img_container.set_position("center")])
+            
         else:
-            bg_clip = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
+            final_bg_clip = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
 
         # 2. 고정 텍스트 레이어 (제목 + 로고)
         text_canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -151,7 +162,7 @@ class Editor:
         fixed_layer = ImageClip(np.array(text_canvas)).set_duration(duration)
         
         # 배경 + 고정 텍스트 합체
-        return CompositeVideoClip([bg_clip, fixed_layer])
+        return CompositeVideoClip([final_bg_clip, fixed_layer])
 
     # -------------------------------------------------------------------------
     # [NEW] 2. 자막 레이어 생성 (투명 배경에 자막만)
@@ -211,7 +222,7 @@ class Editor:
         return CompositeVideoClip([bg, video_centered, overlay])
 
     def make_shorts(self, data, category="world"):
-        print(f"🎬 [Editor] Creating Video with Continuous Zoom...")
+        print(f"🎬 [Editor] Creating Video with Framed Zoom...")
         scenes = data['script']['scenes']
         
         raw_title = data.get('title', "News Update")
@@ -224,7 +235,6 @@ class Editor:
         thumb_img_path = "images/image_1.png"
         if os.path.exists(thumb_img_path):
             print("📸 [Editor] Creating Thumbnail...")
-            # 썸네일은 정지 화면이므로 create_base_layer 사용
             thumb_clip = self.create_base_layer(thumb_img_path, final_title, 0.1)
             clips.append(thumb_clip)
         
@@ -233,7 +243,7 @@ class Editor:
         intro = self.process_special_clip("assets/intro.mp4", "audio/intro.mp3", intro_text, final_title)
         if intro: clips.append(intro)
 
-        # 2. Main Scenes (핵심 수정 구간)
+        # 2. Main Scenes
         for i, scene in enumerate(scenes):
             idx = i + 1
             aud_path = f"audio/audio_{idx}.mp3"
@@ -243,7 +253,6 @@ class Editor:
             full_audio = AudioFileClip(aud_path)
             narr_text = scene.get('narration', "")
             
-            # 텍스트 페이지 나누기 계산
             all_lines = textwrap.wrap(narr_text, width=28)
             num_pages = (len(all_lines) + 3) // 4
             if num_pages < 1: num_pages = 1
@@ -259,38 +268,28 @@ class Editor:
                 pages.append(all_lines[curr : curr + cnt])
                 curr += cnt
             
-            # [중요] 씬의 전체 길이 계산 (오디오 길이 + 휴식 시간)
             total_scene_duration = full_audio.duration + PAUSE_DURATION
             
-            # A. 베이스 레이어 생성 (긴 배경 영상 하나 생성)
+            # A. 베이스 레이어 생성 (액자 방식 줌인 적용)
             base_clip = self.create_base_layer(img_path, final_title, total_scene_duration)
             
             # B. 자막 오버레이들 생성
             overlays = []
-            dur_per_page = full_audio.duration / len(pages) # 자막 한 페이지당 지속시간
+            dur_per_page = full_audio.duration / len(pages)
             
             for p_idx, page_lines in enumerate(pages):
                 start_time = p_idx * dur_per_page
                 
-                # 마지막 페이지면 Pause 시간까지 포함해서 보여줌
                 if p_idx == len(pages) - 1:
                     sub_duration = dur_per_page + PAUSE_DURATION
                 else:
                     sub_duration = dur_per_page
                 
-                # 자막 클립 생성 (투명 배경)
                 sub_clip = self.create_subtitle_clip(page_lines, sub_duration)
-                
-                # 시작 시간 설정하여 오버레이 리스트에 추가
                 sub_clip = sub_clip.set_start(start_time).set_position('center')
                 overlays.append(sub_clip)
             
-            # C. 합성 (베이스 + 자막들)
-            # 결과: 배경은 쭉 이어지고, 자막만 시간 맞춰서 교체됨
             scene_clip = CompositeVideoClip([base_clip] + overlays)
-            
-            # D. 오디오 설정 (뒤에 무음 구간 추가 필요 없음, 영상 길이가 이미 길어서 자동 처리됨)
-            # 단, 오디오가 영상보다 짧으므로 set_audio 시 뒷부분 무음 처리됨
             scene_clip = scene_clip.set_audio(full_audio)
             
             clips.append(scene_clip)

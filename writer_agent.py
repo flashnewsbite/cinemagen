@@ -72,9 +72,11 @@ class WriterAgent:
             
             try:
                 genai.configure(api_key=key)
-                model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=Config.SAFETY_SETTINGS)
+                # 안전 설정이 Config에 없다면 기본값 사용 (코드 호환성 유지)
+                safety = getattr(Config, 'SAFETY_SETTINGS', None)
+                model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=safety)
                 
-                # [수정] 타임아웃(request_options) 추가: 15초 동안 응답 없으면 에러 처리
+                # [타임아웃 설정] 15초 내 응답 없으면 재시도
                 response = model.generate_content(
                     prompt, 
                     generation_config={"response_mime_type": "application/json"},
@@ -82,12 +84,19 @@ class WriterAgent:
                 )
                 
                 text_response = response.text.strip()
+                # Markdown 코드 블록 제거
                 if text_response.startswith("```json"):
                     text_response = text_response[7:]
                 if text_response.endswith("```"):
                     text_response = text_response[:-3]
                 
-                return json.loads(text_response)
+                data = json.loads(text_response)
+                
+                # 성공 시 메타데이터 저장 (JSON + TXT)
+                if 'metadata' in data:
+                    self.save_metadata_file(data['metadata'])
+                
+                return data
             
             except Exception as e:
                 err_msg = str(e)
@@ -116,10 +125,24 @@ class WriterAgent:
                 
         return None
 
-    def save_metadata_file(self, metadata, filename="social_metadata.txt"):
-        """Save metadata in a CLEAN, readable format"""
-        path = os.path.join("results", filename)
-        
+    def save_metadata_file(self, metadata, folder="results"):
+        """
+        Saves metadata in two formats:
+        1. metadata.json (For Automation Bot)
+        2. social_metadata.txt (For Human Review)
+        """
+        os.makedirs(folder, exist_ok=True)
+
+        # [1] 기계용 JSON 저장 (봇이 읽을 파일)
+        json_path = os.path.join(folder, "metadata.json")
+        try:
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"❌ Failed to save JSON metadata: {e}")
+
+        # [2] 사람용 TXT 저장 (눈으로 확인용)
+        txt_path = os.path.join(folder, "social_metadata.txt")
         content = f"""
 ============================================================
 🎬 YOUTUBE SHORTS METADATA
@@ -160,8 +183,8 @@ class WriterAgent:
 ------------------------------------------------------------
 """
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(content.strip())
-            print(f"✅ Metadata saved cleanly: {path}")
+            print(f"💾 [Writer] Metadata saved: {json_path} & {txt_path}")
         except Exception as e:
-            print(f"❌ Failed to save metadata: {e}")
+            print(f"❌ Failed to save TXT metadata: {e}")

@@ -45,7 +45,7 @@ def sanitize_script(script_data):
 def main():
     print(f"\n🤖 Flash News Bite AI Studio Initialized...")
 
-    # [NEW] 자동화 파라미터 설정
+    # [자동화 파라미터 설정]
     parser = argparse.ArgumentParser(description="CinemaGen Automation")
     parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent")
     parser.add_argument("--gender", type=str, default="female", help="Voice gender: male or female")
@@ -129,9 +129,8 @@ def main():
 
         script_data = sanitize_script(script_data)
         
-        if 'metadata' in script_data:
-            if hasattr(writer, 'save_metadata_file'):
-                writer.save_metadata_file(script_data['metadata'])
+        # [수정됨] metadata.json 생성 로직 제거
+        # 스케줄러가 아닌 단독 실행 시에는 불필요한 파일 생성을 방지합니다.
 
         # 3. Media Generation
         media_agent.get_audio(script_data, gender=gender, tone=tone)
@@ -141,7 +140,7 @@ def main():
         editor.make_shorts(script_data, category=target_category)
 
         # =========================================================================
-        # 🆕 [Step 3] 결과물 자동 이름 변경 (Archiving) - Fix Applied
+        # 🆕 [Step 3] 결과물 자동 이름 변경 (Archiving) - JSON 제외
         # =========================================================================
         print("\n📦 [Archiving] Renaming files with timestamp...")
         
@@ -149,16 +148,15 @@ def main():
         results_dir = "results"
         cat_upper = target_category.upper()
 
-        # [수정] 파일 이름 후보군 확장 (USWORLD 등 예외 케이스 포함)
+        # [파일명 후보군] USWORLD 같은 케이스도 포함하여 찾기
         video_candidates = [
-            f"final_shorts_{cat_upper}.mp4",            # WORLD
-            f"final_shorts_{cat_upper}S.mp4",           # WORLDS
-            f"final_shorts_{cat_upper.rstrip('S')}.mp4", # WORLD
-            f"final_shorts_US{cat_upper}.mp4"            # USWORLD (문제 해결!)
+            f"final_shorts_{cat_upper}.mp4",
+            f"final_shorts_{cat_upper}S.mp4",
+            f"final_shorts_{cat_upper.rstrip('S')}.mp4",
+            f"final_shorts_US{cat_upper}.mp4" 
         ]
         
         src_video = None
-        # 생성된 파일 중 실제로 존재하는 파일 찾기
         for cand in video_candidates:
             path = os.path.join(results_dir, cand)
             if os.path.exists(path):
@@ -166,18 +164,16 @@ def main():
                 print(f"   🔍 Found generated video: {cand}")
                 break
         
-        src_meta = os.path.join(results_dir, "metadata.json")
+        # 텍스트 파일(social_metadata.txt)은 업로드용 설명에 필요하므로 유지
         src_text = os.path.join(results_dir, "social_metadata.txt")
 
-        # 새로운 이름 정의
+        # 새로운 이름 포맷 (날짜_시간 적용)
         new_base = f"final_shorts_{cat_upper}_{timestamp}"
         dst_video = os.path.join(results_dir, f"{new_base}.mp4")
-        dst_meta = os.path.join(results_dir, f"{new_base}.json")
         dst_text = os.path.join(results_dir, f"{new_base}.txt")
 
-        # 이름 변경 실행
+        # [1] 영상 이름 변경
         if src_video:
-            # 혹시 이전에 같은 이름으로 생성된게 있다면 덮어쓰기 위해 삭제
             if os.path.exists(dst_video):
                 os.remove(dst_video)
             os.rename(src_video, dst_video)
@@ -185,13 +181,12 @@ def main():
         else:
             print(f"   ⚠️ Video file not found (Checked variants: {video_candidates})")
 
-        if os.path.exists(src_meta):
-            os.rename(src_meta, dst_meta)
-            print(f"   ✅ Metadata Saved: {dst_meta}")
-
+        # [2] 텍스트 파일 이름 변경
         if os.path.exists(src_text):
             os.rename(src_text, dst_text)
             print(f"   ✅ Social Text Saved: {dst_text}")
+            
+        # [3] JSON 파일은 처리하지 않음 (생성 안 함)
 
         print("\n🎉 All Done! Please check the 'results' folder.")
 

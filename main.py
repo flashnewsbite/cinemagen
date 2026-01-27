@@ -1,6 +1,7 @@
 import os
 import re
-import argparse  # [NEW] 명령줄 인수 처리를 위해 추가
+import argparse
+from datetime import datetime
 from dotenv import load_dotenv
 from config import Config
 from news_agent import NewsAgent
@@ -20,26 +21,18 @@ def sanitize_script(script_data):
 
     def replace_text(text):
         if not text: return ""
-        # 대소문자 구분 없이(Ignore case) 패턴 찾아서 교체
-        # 1. "Former President Trump" -> "President Trump"
         text = re.sub(r'(?i)former president\s+trump', 'President Trump', text)
-        # 2. "Ex-President Trump" -> "President Trump"
         text = re.sub(r'(?i)ex-president\s+trump', 'President Trump', text)
         return text
 
     print("🧹 [Main] Sanitizing script terminology (Trump: Former -> President)...")
 
-    # 1. 제목 교정
     if 'title' in script_data:
         script_data['title'] = replace_text(script_data['title'])
-
-    # 2. 인트로/아웃트로 교정
     if 'intro_narration' in script_data:
         script_data['intro_narration'] = replace_text(script_data['intro_narration'])
     if 'outro_narration' in script_data:
         script_data['outro_narration'] = replace_text(script_data['outro_narration'])
-
-    # 3. 본문 씬(Scene) 교정
     if 'script' in script_data and 'scenes' in script_data['script']:
         for scene in script_data['script']['scenes']:
             if 'narration' in scene:
@@ -52,7 +45,7 @@ def sanitize_script(script_data):
 def main():
     print(f"\n🤖 Flash News Bite AI Studio Initialized...")
 
-    # [NEW] 자동화 파라미터 설정 (argparse)
+    # [NEW] 자동화 파라미터 설정
     parser = argparse.ArgumentParser(description="CinemaGen Automation")
     parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent")
     parser.add_argument("--gender", type=str, default="female", help="Voice gender: male or female")
@@ -60,32 +53,23 @@ def main():
     
     args = parser.parse_args()
 
-    # 에이전트 인스턴스 생성
     news_agent = NewsAgent()
     writer = WriterAgent()
     media_agent = MediaAgent()
     editor = Editor()
 
-    # 변수 초기화
     news_mode = "daily"
     target_category = "world"
     target_url = None
     gender = "female"
     tone = "2"
 
-    # =================================================================================
     # [Step 1] 사용자 입력 OR 자동 모드 판단
-    # =================================================================================
-    
-    # 1. 자동 모드 (스케줄러가 --category 값을 줬을 때)
     if args.category:
         print(f"🚀 [Auto Mode] Starting automation for category: {args.category}")
-        news_mode = "daily"
         target_category = args.category
         gender = args.gender
         tone = args.tone
-        
-    # 2. 수동 모드 (평소처럼 실행했을 때)
     else:
         print("\n[Step 1] Select News Source")
         print("1. 📅 Daily News Summary (Category Select)")
@@ -123,10 +107,7 @@ def main():
     print(f"🚀 Processing: [{news_mode.upper()}] Category=[{target_category}] Gender=[{gender}]")
     print("="*50 + "\n")
 
-    # =================================================================================
-    # [Step 2] 실행 단계 (자동/수동 공통)
-    # =================================================================================
-
+    # [Step 2] 실행 단계
     try:
         # 1. News Gathering
         context = ""
@@ -134,7 +115,6 @@ def main():
             print(f"📰 [News] Fetching content from URL...")
             context = news_agent.get_specific_news(target_url)
         else:
-            # category가 문자열(world, tech...)인지 확인
             context = news_agent.get_daily_news(category=target_category)
 
         if not context:
@@ -143,28 +123,75 @@ def main():
 
         # 2. Script Writing
         script_data = writer.generate_content(context, mode="shorts")
-        
         if not script_data:
             print("❌ Script generation failed.")
             return
 
-        # [Hotfix] 대본 교정 (Former -> President)
         script_data = sanitize_script(script_data)
         
-        # [NEW] 메타데이터 저장 (writer_agent 수정본 적용 시 동작)
         if 'metadata' in script_data:
-            # save_metadata_file 함수가 있다면 호출
             if hasattr(writer, 'save_metadata_file'):
                 writer.save_metadata_file(script_data['metadata'])
-            else:
-                print("⚠️ writer.save_metadata_file not found. Skipping metadata save.")
 
-        # 3. Media Generation (TTS, Image)
+        # 3. Media Generation
         media_agent.get_audio(script_data, gender=gender, tone=tone)
         media_agent.get_images(script_data['script']['scenes'])
 
         # 4. Video Editing
         editor.make_shorts(script_data, category=target_category)
+
+        # =========================================================================
+        # 🆕 [Step 3] 결과물 자동 이름 변경 (Archiving) - Fix Applied
+        # =========================================================================
+        print("\n📦 [Archiving] Renaming files with timestamp...")
+        
+        timestamp = datetime.now().strftime("%m%d%Y_%H%M")
+        results_dir = "results"
+        cat_upper = target_category.upper()
+
+        # [수정] 파일 이름 후보군 확장 (USWORLD 등 예외 케이스 포함)
+        video_candidates = [
+            f"final_shorts_{cat_upper}.mp4",            # WORLD
+            f"final_shorts_{cat_upper}S.mp4",           # WORLDS
+            f"final_shorts_{cat_upper.rstrip('S')}.mp4", # WORLD
+            f"final_shorts_US{cat_upper}.mp4"            # USWORLD (문제 해결!)
+        ]
+        
+        src_video = None
+        # 생성된 파일 중 실제로 존재하는 파일 찾기
+        for cand in video_candidates:
+            path = os.path.join(results_dir, cand)
+            if os.path.exists(path):
+                src_video = path
+                print(f"   🔍 Found generated video: {cand}")
+                break
+        
+        src_meta = os.path.join(results_dir, "metadata.json")
+        src_text = os.path.join(results_dir, "social_metadata.txt")
+
+        # 새로운 이름 정의
+        new_base = f"final_shorts_{cat_upper}_{timestamp}"
+        dst_video = os.path.join(results_dir, f"{new_base}.mp4")
+        dst_meta = os.path.join(results_dir, f"{new_base}.json")
+        dst_text = os.path.join(results_dir, f"{new_base}.txt")
+
+        # 이름 변경 실행
+        if src_video:
+            # 혹시 이전에 같은 이름으로 생성된게 있다면 덮어쓰기 위해 삭제
+            if os.path.exists(dst_video):
+                os.remove(dst_video)
+            os.rename(src_video, dst_video)
+            print(f"   ✅ Video Renamed & Saved: {dst_video}")
+        else:
+            print(f"   ⚠️ Video file not found (Checked variants: {video_candidates})")
+
+        if os.path.exists(src_meta):
+            os.rename(src_meta, dst_meta)
+            print(f"   ✅ Metadata Saved: {dst_meta}")
+
+        if os.path.exists(src_text):
+            os.rename(src_text, dst_text)
+            print(f"   ✅ Social Text Saved: {dst_text}")
 
         print("\n🎉 All Done! Please check the 'results' folder.")
 

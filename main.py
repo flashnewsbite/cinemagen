@@ -15,7 +15,6 @@ load_dotenv()
 def sanitize_script(script_data):
     """
     [Hotfix] 2026년 기준 트럼프는 현직 대통령입니다.
-    AI가 'Former' 또는 'Ex-'라고 잘못 쓴 표현을 강제로 교정합니다.
     """
     if not script_data: return script_data
 
@@ -47,9 +46,11 @@ def main():
 
     # [자동화 파라미터 설정]
     parser = argparse.ArgumentParser(description="CinemaGen Automation")
-    parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent")
-    parser.add_argument("--gender", type=str, default="female", help="Voice gender: male or female")
-    parser.add_argument("--tone", type=str, default="2", help="Voice tone: 1(Trust), 2(Neutral), 3(Bright)")
+    parser.add_argument("--category", type=str, help="Auto-run category")
+    parser.add_argument("--gender", type=str, default="female", help="Voice gender")
+    parser.add_argument("--tone", type=str, default="2", help="Voice tone")
+    # [핵심] 스케줄러가 전달하는 timestamp를 받기 위한 인자 추가
+    parser.add_argument("--timestamp", type=str, help="External timestamp for file naming")
     
     args = parser.parse_args()
 
@@ -63,6 +64,14 @@ def main():
     target_url = None
     gender = "female"
     tone = "2"
+    
+    # 타임스탬프 결정 로직 (외부 입력 우선, 없으면 자체 생성)
+    if args.timestamp:
+        final_timestamp = args.timestamp
+        print(f"🕒 [Time] Using External Timestamp: {final_timestamp}")
+    else:
+        final_timestamp = datetime.now().strftime("%m%d%Y_%H%M")
+        print(f"🕒 [Time] Generated Local Timestamp: {final_timestamp}")
 
     # [Step 1] 사용자 입력 OR 자동 모드 판단
     if args.category:
@@ -128,9 +137,6 @@ def main():
             return
 
         script_data = sanitize_script(script_data)
-        
-        # [수정됨] metadata.json 생성 로직 제거
-        # 스케줄러가 아닌 단독 실행 시에는 불필요한 파일 생성을 방지합니다.
 
         # 3. Media Generation
         media_agent.get_audio(script_data, gender=gender, tone=tone)
@@ -140,15 +146,14 @@ def main():
         editor.make_shorts(script_data, category=target_category)
 
         # =========================================================================
-        # 🆕 [Step 3] 결과물 자동 이름 변경 (Archiving) - JSON 제외
+        # 🆕 [Step 3] 결과물 이름 변경 (타임스탬프 적용)
         # =========================================================================
-        print("\n📦 [Archiving] Renaming files with timestamp...")
+        print("\n📦 [Archiving] Renaming files...")
         
-        timestamp = datetime.now().strftime("%m%d%Y_%H%M")
         results_dir = "results"
         cat_upper = target_category.upper()
 
-        # [파일명 후보군] USWORLD 같은 케이스도 포함하여 찾기
+        # 파일 이름 후보군
         video_candidates = [
             f"final_shorts_{cat_upper}.mp4",
             f"final_shorts_{cat_upper}S.mp4",
@@ -164,11 +169,10 @@ def main():
                 print(f"   🔍 Found generated video: {cand}")
                 break
         
-        # 텍스트 파일(social_metadata.txt)은 업로드용 설명에 필요하므로 유지
         src_text = os.path.join(results_dir, "social_metadata.txt")
 
-        # 새로운 이름 포맷 (날짜_시간 적용)
-        new_base = f"final_shorts_{cat_upper}_{timestamp}"
+        # [핵심] 스케줄러가 준 final_timestamp를 사용하여 파일명 확정
+        new_base = f"final_shorts_{cat_upper}_{final_timestamp}"
         dst_video = os.path.join(results_dir, f"{new_base}.mp4")
         dst_text = os.path.join(results_dir, f"{new_base}.txt")
 
@@ -177,7 +181,7 @@ def main():
             if os.path.exists(dst_video):
                 os.remove(dst_video)
             os.rename(src_video, dst_video)
-            print(f"   ✅ Video Renamed & Saved: {dst_video}")
+            print(f"   ✅ Video Saved: {dst_video}")
         else:
             print(f"   ⚠️ Video file not found (Checked variants: {video_candidates})")
 
@@ -186,8 +190,6 @@ def main():
             os.rename(src_text, dst_text)
             print(f"   ✅ Social Text Saved: {dst_text}")
             
-        # [3] JSON 파일은 처리하지 않음 (생성 안 함)
-
         print("\n🎉 All Done! Please check the 'results' folder.")
 
     except Exception as e:

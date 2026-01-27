@@ -72,11 +72,9 @@ class WriterAgent:
             
             try:
                 genai.configure(api_key=key)
-                # 안전 설정이 Config에 없다면 기본값 사용 (코드 호환성 유지)
                 safety = getattr(Config, 'SAFETY_SETTINGS', None)
                 model = genai.GenerativeModel(Config.MODEL_NAME, safety_settings=safety)
                 
-                # [타임아웃 설정] 15초 내 응답 없으면 재시도
                 response = model.generate_content(
                     prompt, 
                     generation_config={"response_mime_type": "application/json"},
@@ -84,7 +82,6 @@ class WriterAgent:
                 )
                 
                 text_response = response.text.strip()
-                # Markdown 코드 블록 제거
                 if text_response.startswith("```json"):
                     text_response = text_response[7:]
                 if text_response.endswith("```"):
@@ -92,7 +89,7 @@ class WriterAgent:
                 
                 data = json.loads(text_response)
                 
-                # 성공 시 메타데이터 저장 (JSON + TXT)
+                # 메타데이터 저장 (JSON + TXT)
                 if 'metadata' in data:
                     self.save_metadata_file(data['metadata'])
                 
@@ -102,7 +99,6 @@ class WriterAgent:
                 err_msg = str(e)
                 print(f"   ⚠️ Writer Error: {err_msg}")
                 
-                # 에러 유형별 키 로테이션 처리
                 if any(x in err_msg for x in ["400", "API_KEY_INVALID", "403"]):
                     print("   ❌ Invalid/Suspended API Key. Rotating...")
                     Config.rotate_key()
@@ -110,14 +106,13 @@ class WriterAgent:
                     print("   ⏳ Quota Exceeded. Rotating key...")
                     Config.rotate_key()
                 elif "deadline" in err_msg.lower() or "timeout" in err_msg.lower():
-                     print("   ⏰ Timeout. Google server is slow. Rotating key & Retrying...")
+                     print("   ⏰ Timeout. Rotating key...")
                      Config.rotate_key()
                 elif "not found" in err_msg.lower() or "404" in err_msg:
                     print("   📉 Model unavailable. Switching to 'gemini-1.5-pro'.")
                     Config.MODEL_NAME = "models/gemini-1.5-pro"
                 else:
-                    # 알 수 없는 에러라도 일단 키를 바꿔서 재시도하는 것이 안전함
-                    print("   ⚠️ Unknown error. Rotating key just in case...")
+                    print("   ⚠️ Unknown error. Rotating key...")
                     Config.rotate_key()
 
                 attempts += 1
@@ -128,12 +123,12 @@ class WriterAgent:
     def save_metadata_file(self, metadata, folder="results"):
         """
         Saves metadata in two formats:
-        1. metadata.json (For Automation Bot)
-        2. social_metadata.txt (For Human Review)
+        1. metadata.json (For Automation Bot & Structured Data)
+        2. social_metadata.txt (For Human Review & Description Fallback)
         """
         os.makedirs(folder, exist_ok=True)
 
-        # [1] 기계용 JSON 저장 (봇이 읽을 파일)
+        # [1] 기계용 JSON 저장 (복구됨)
         json_path = os.path.join(folder, "metadata.json")
         try:
             with open(json_path, "w", encoding="utf-8") as f:
@@ -141,7 +136,7 @@ class WriterAgent:
         except Exception as e:
             print(f"❌ Failed to save JSON metadata: {e}")
 
-        # [2] 사람용 TXT 저장 (눈으로 확인용)
+        # [2] 사람용 TXT 저장
         txt_path = os.path.join(folder, "social_metadata.txt")
         content = f"""
 ============================================================
@@ -165,16 +160,6 @@ class WriterAgent:
 [X (Twitter)]
 ------------------------------------------------------------
 {metadata.get('x_post', 'N/A')}
-------------------------------------------------------------
-
-[Instagram]
-------------------------------------------------------------
-{metadata.get('instagram_post', 'N/A')}
-------------------------------------------------------------
-
-[TikTok]
-------------------------------------------------------------
-{metadata.get('tiktok_post', 'N/A')}
 ------------------------------------------------------------
 
 [Threads]

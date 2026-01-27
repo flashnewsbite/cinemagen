@@ -13,9 +13,6 @@ from editor import Editor
 load_dotenv()
 
 def sanitize_script(script_data):
-    """
-    [Hotfix] 2026년 기준 트럼프는 현직 대통령입니다.
-    """
     if not script_data: return script_data
 
     def replace_text(text):
@@ -49,7 +46,6 @@ def main():
     parser.add_argument("--category", type=str, help="Auto-run category")
     parser.add_argument("--gender", type=str, default="female", help="Voice gender")
     parser.add_argument("--tone", type=str, default="2", help="Voice tone")
-    # [핵심] 스케줄러가 전달하는 timestamp를 받기 위한 인자 추가
     parser.add_argument("--timestamp", type=str, help="External timestamp for file naming")
     
     args = parser.parse_args()
@@ -65,7 +61,6 @@ def main():
     gender = "female"
     tone = "2"
     
-    # 타임스탬프 결정 로직 (외부 입력 우선, 없으면 자체 생성)
     if args.timestamp:
         final_timestamp = args.timestamp
         print(f"🕒 [Time] Using External Timestamp: {final_timestamp}")
@@ -137,6 +132,10 @@ def main():
             return
 
         script_data = sanitize_script(script_data)
+        
+        # [복구됨] metadata.json 저장 실행
+        if 'metadata' in script_data:
+            writer.save_metadata_file(script_data['metadata'])
 
         # 3. Media Generation
         media_agent.get_audio(script_data, gender=gender, tone=tone)
@@ -146,7 +145,7 @@ def main():
         editor.make_shorts(script_data, category=target_category)
 
         # =========================================================================
-        # 🆕 [Step 3] 결과물 이름 변경 (타임스탬프 적용)
+        # 🆕 [Step 3] 결과물 이름 변경 (타임스탬프 적용 - JSON 포함)
         # =========================================================================
         print("\n📦 [Archiving] Renaming files...")
         
@@ -169,24 +168,39 @@ def main():
                 print(f"   🔍 Found generated video: {cand}")
                 break
         
+        src_meta = os.path.join(results_dir, "metadata.json") # [복구]
         src_text = os.path.join(results_dir, "social_metadata.txt")
 
         # [핵심] 스케줄러가 준 final_timestamp를 사용하여 파일명 확정
         new_base = f"final_shorts_{cat_upper}_{final_timestamp}"
+        
         dst_video = os.path.join(results_dir, f"{new_base}.mp4")
-        dst_text = os.path.join(results_dir, f"{new_base}.txt")
+        dst_meta  = os.path.join(results_dir, f"{new_base}.json") # [복구]
+        dst_text  = os.path.join(results_dir, f"{new_base}.txt")
 
         # [1] 영상 이름 변경
         if src_video:
             if os.path.exists(dst_video):
-                os.remove(dst_video)
+                try: os.remove(dst_video)
+                except: pass
             os.rename(src_video, dst_video)
             print(f"   ✅ Video Saved: {dst_video}")
         else:
             print(f"   ⚠️ Video file not found (Checked variants: {video_candidates})")
 
-        # [2] 텍스트 파일 이름 변경
+        # [2] JSON 파일 이름 변경 (복구됨)
+        if os.path.exists(src_meta):
+            if os.path.exists(dst_meta):
+                try: os.remove(dst_meta)
+                except: pass
+            os.rename(src_meta, dst_meta)
+            print(f"   ✅ Metadata Saved: {dst_meta}")
+
+        # [3] 텍스트 파일 이름 변경
         if os.path.exists(src_text):
+            if os.path.exists(dst_text):
+                try: os.remove(dst_text)
+                except: pass
             os.rename(src_text, dst_text)
             print(f"   ✅ Social Text Saved: {dst_text}")
             

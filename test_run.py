@@ -2,7 +2,6 @@ import os
 import time
 import subprocess
 import json
-import random
 from datetime import datetime
 
 # 업로더 모듈 가져오기
@@ -16,161 +15,96 @@ except ImportError:
 BASE_DIR = os.getcwd()
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
-def get_best_description(txt_path, meta_data):
+def get_exact_files(category, timestamp):
     """
-    유튜브 설명을 위한 최적의 텍스트 추출 (JSON 우선)
+    [NEW] 스케줄러와 동일한 방식으로 정확한 파일을 찾습니다.
     """
-    # 1순위: JSON 데이터 먼저 확인
-    if meta_data and "youtube_description" in meta_data:
-        desc = meta_data["youtube_description"]
-        if desc and len(desc) > 10:
-            print("      ✅ Using structured description from metadata.json")
-            return desc
+    cat_upper = category.upper()
+    base_name = f"final_shorts_{cat_upper}_{timestamp}"
     
-    # 2순위: TXT 파일 (JSON 누락 시 비상용)
-    if os.path.exists(txt_path):
+    video_path = os.path.join(RESULTS_DIR, f"{base_name}.mp4")
+    text_path = os.path.join(RESULTS_DIR, f"{base_name}.txt")
+    
+    if not os.path.exists(video_path):
+        print(f"      ❌ Critical: Expected video file not found!")
+        print(f"         Target: {video_path}")
+        return None, None
+
+    print(f"      ✅ Verified file exists: {os.path.basename(video_path)}")
+    return video_path, text_path
+
+def get_description_content(txt_path):
+    if txt_path and os.path.exists(txt_path):
         try:
             with open(txt_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
-                if len(content) > 10: 
-                    print("      ⚠️ JSON description missing. Using full text file as fallback.")
+                if len(content) > 10:
                     return content
         except: pass
-    
-    return "#shorts #tech #news"
-
-def find_video_file(category):
-    """
-    영상 파일 찾기 로직 (단수/복수형 자동 대응)
-    """
-    cat_upper = category.upper()
-    candidates = [
-        f"final_shorts_{cat_upper}.mp4",
-        f"final_shorts_{cat_upper}S.mp4",
-        f"final_shorts_{cat_upper.rstrip('S')}.mp4"
-    ]
-    
-    for filename in sorted(list(set(candidates)), key=len):
-        full_path = os.path.join(RESULTS_DIR, filename)
-        if os.path.exists(full_path):
-            print(f"      ✅ Found video file: {filename}")
-            return full_path
-    return None
-
-def process_and_archive_files(category):
-    timestamp = datetime.now().strftime("%m%d%Y_%H%M")
-    
-    src_video = find_video_file(category)
-    src_meta  = os.path.join(RESULTS_DIR, "metadata.json")
-    src_text  = os.path.join(RESULTS_DIR, "social_metadata.txt")
-
-    new_base_name = f"final_shorts_{category.upper()}_{timestamp}"
-    dst_video = os.path.join(RESULTS_DIR, f"{new_base_name}.mp4")
-    dst_meta  = os.path.join(RESULTS_DIR, f"{new_base_name}.json")
-    dst_text  = os.path.join(RESULTS_DIR, f"{new_base_name}.txt")
-
-    archived_data = {'video': None, 'meta': {}, 'desc': ""}
-
-    try:
-        # 1. 메타데이터 읽기
-        if os.path.exists(src_meta):
-            with open(src_meta, 'r', encoding='utf-8') as f:
-                archived_data['meta'] = json.load(f)
-        else:
-            print("⚠️ metadata.json not found (Creating dummy data)")
-            archived_data['meta'] = {"youtube_title": f"{category} News", "x_post": "Update!"}
-
-        # 2. 설명 확보
-        archived_data['desc'] = get_best_description(src_text, archived_data['meta'])
-
-        # 3. 파일 이름 변경 (Archiving)
-        if os.path.exists(src_text):
-            os.rename(src_text, dst_text)
-            print(f"📦 Archived Text:  {os.path.basename(dst_text)}")
-
-        if os.path.exists(src_meta):
-            os.rename(src_meta, dst_meta)
-            print(f"📦 Archived Meta:  {os.path.basename(dst_meta)}")
-
-        if src_video and os.path.exists(src_video):
-            os.rename(src_video, dst_video)
-            print(f"📦 Archived Video: {os.path.basename(dst_video)}")
-            archived_data['video'] = dst_video
-        else:
-            print(f"❌ Video not found. Category: {category}")
-            return None, None, None
-
-        return archived_data['video'], archived_data['meta'], archived_data['desc']
-
-    except Exception as e:
-        print(f"❌ Archive Error: {e}")
-        return None, None, None
+    return "#shorts #news"
 
 def run_full_test():
-    print(f"\n🧪 Starting Tech & Science Category Test... {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\n🧪 Starting Test Run... {datetime.now().strftime('%H:%M:%S')}")
     
-    # [설정] 테스트 타겟: TECH
-    target_category = "tech"
-    
-    # [설정] 스케줄러 로직 반영 (Tech = Male, Tone 2)
-    target_tone = "2"   # Neutral/Smart
+    # [설정] 테스트하고 싶은 카테고리 선택
+    target_category = "finance"  # world, tech, finance, art, sports, ent
     target_gender = "male"
+    target_tone = "1"
     
-    print(f"   ℹ️ Test Config: Category={target_category}, Gender={target_gender}, Tone={target_tone}")
-
-    # 1. 영상 생성
-    print(f"\n🎬 [Step 1] Generating Video ({target_category.upper()})...")
+    # [핵심] 테스트용 타임스탬프 생성
+    timestamp = datetime.now().strftime("%m%d%Y_%H%M")
     
-    # main.py 실행 (Gender, Tone 인자 전달)
-    subprocess.run([
-        "python", "main.py", 
-        "--category", target_category, 
-        "--gender", target_gender, 
-        "--tone", target_tone
-    ], check=False)
+    print(f"   ℹ️ Test Config: Category={target_category}, ID={timestamp}")
 
-    # 2. 파일 보관
-    print("\n📦 [Step 2] Archiving Files...")
-    video_path, meta, desc_text = process_and_archive_files(target_category)
+    # 1. 영상 생성 (main.py 호출 시 timestamp 전달)
+    print(f"\n🎬 [Step 1] Generating Video...")
+    try:
+        subprocess.run([
+            "python", "main.py", 
+            "--category", target_category, 
+            "--gender", target_gender, 
+            "--tone", target_tone,
+            "--timestamp", timestamp  # [중요] 시간을 지정해서 명령
+        ], check=True)
+    except Exception as e:
+        print(f"❌ Main Process Failed: {e}")
+        return
+
+    # 2. 파일 확보
+    print("\n📦 [Step 2] Verifying Files...")
+    video_path, text_path = get_exact_files(target_category, timestamp)
     
     if not video_path:
         print("❌ Test Aborted: Video file missing.")
         return
 
-    print(f"   ✅ Target File: {os.path.basename(video_path)}")
+    # 3. 업로드 데이터 준비
+    yt_title = f"Daily {target_category.capitalize()} News ⚡"
+    yt_desc = get_description_content(text_path)
+    # X/Threads용 텍스트 (너무 길면 자르기)
+    sns_text = yt_desc if len(yt_desc) < 280 else (yt_desc[:250] + "...")
+
+    print(f"\n📝 [Check] Description Preview:\n{'-'*30}\n{yt_desc[:100]}...\n{'-'*30}")
+
+    # 4. 업로드 테스트
+    # (원하지 않는 플랫폼은 주석 처리하세요)
     
-    # 3. 업로드
-    # [수정] Test Title prefix 제거 (실전처럼)
-    yt_title = f"{meta.get('youtube_title', 'Tech News Title')}"
-    yt_desc = desc_text 
-    sns_text = f"{meta.get('x_post', 'Tech News Update!')}"
-
-    print(f"\n📝 [Check] YouTube Description Preview:\n{'-'*30}\n{yt_desc[:100]}...\n{'-'*30}")
-
     # YouTube
     print("\n🟥 YouTube Upload...")
-    try: 
-        youtube_upload(video_path, category=target_category, title=yt_title, description=yt_desc)
-    except Exception as e: 
-        print(f"   -> Failed: {e}")
+    try: youtube_upload(video_path, category=target_category, title=yt_title, description=yt_desc)
+    except Exception as e: print(f"   -> Failed: {e}")
     
     # X (Twitter)
     print("\n⬛ X Upload...")
-    try: 
-        x_upload(video_path, text=sns_text)
-    except Exception as e: 
-        print(f"   -> Failed: {e}")
+    try: x_upload(video_path, text=sns_text)
+    except Exception as e: print(f"   -> Failed: {e}")
     
-    time.sleep(3)
-
     # Threads
     print("\n🧵 Threads Upload...")
-    try: 
-        threads_upload(video_path, text=sns_text)
-    except Exception as e: 
-        print(f"   -> Failed: {e}")
+    try: threads_upload(video_path, text=sns_text)
+    except Exception as e: print(f"   -> Failed: {e}")
 
-    print("\n✨ Tech Test Complete. Files are preserved.")
+    print("\n✨ Test Run Complete.")
 
 if __name__ == "__main__":
     run_full_test()

@@ -4,7 +4,7 @@ import time
 import random
 
 # ====================================================
-# ⬛ X (Twitter) Browser Uploader (Dialog Focus)
+# ⬛ X (Twitter) Browser Uploader (Keyboard Shortcut)
 # ====================================================
 
 BASE_DIR = os.getcwd()
@@ -73,16 +73,14 @@ def upload_video(video_path, text):
             print("      📝 Typing caption...")
             page.keyboard.type(text)
             
-            # 3. [핵심 수정] 팝업창(Dialog) 내부의 버튼 찾기
+            # 3. [핵심] 업로드 완료 대기 (버튼 활성화 여부로 판단)
             print("      ⏳ Waiting for video upload to complete...")
             
-            # 'dialog' 역할을 가진 요소(팝업창)를 먼저 찾습니다.
+            # 팝업창(Dialog) 내부의 버튼 찾기
             dialog = page.locator('div[role="dialog"]')
-            
-            # 그 안에서 'tweetButton'을 찾습니다. (이게 진짜 버튼)
             post_btn = dialog.locator('button[data-testid="tweetButton"]')
             
-            # 만약 dialog 안에서 못 찾으면 전체 페이지에서 다시 찾음 (Fallback)
+            # 못 찾으면 전체에서 찾기 (Fallback)
             if post_btn.count() == 0:
                 post_btn = page.locator('button[data-testid="tweetButton"]').last
 
@@ -99,12 +97,19 @@ def upload_video(video_path, text):
                 print("❌ Timeout: Upload took too long.")
                 return False
 
-            # 안정성을 위해 2초 더 대기
+            # 안정성을 위해 잠시 대기
             time.sleep(2)
 
-            # 4. 버튼 클릭
-            print("      🐦 Clicking 'Post' button...")
-            post_btn.click(force=True)
+            # 4. [NEW] 키보드 단축키로 전송 (Ctrl + Enter)
+            # 버튼 클릭이 씹히는 문제를 해결하기 위해 키보드 이벤트를 사용합니다.
+            print("      ⌨️ Sending Post via Keyboard Shortcut (Ctrl+Enter)...")
+            
+            # 입력창에 확실히 포커스를 줍니다.
+            page.locator('div[role="textbox"]').first.click()
+            time.sleep(0.5)
+            
+            # Ctrl + Enter 입력 (Mac의 경우 Meta+Enter도 고려해야 하지만 보통 Ctrl+Enter가 웹 표준)
+            page.keyboard.press("Control+Enter")
             
             # 5. 확인 로직
             print("      📤 Sending... Waiting for confirmation...")
@@ -116,17 +121,24 @@ def upload_video(video_path, text):
                     print("      ✅ Confirmed: 'Your post was sent' toast message.")
                     success = True
                     break
-                # 모달이 사라졌는지 확인 (성공하면 입력창이 닫힘)
+                
+                # 모달이 닫혔는지 확인 (성공하면 입력창이 사라짐)
                 if page.locator('div[role="dialog"]').count() == 0:
-                    # URL이 홈으로 바뀌었는지 체크
                     if "compose/post" not in page.url:
                         print("      ✅ Confirmed: Modal closed.")
                         success = True
                         break
+                
+                # [Fallback] 만약 단축키가 안 먹혔다면 5초 뒤에 물리 클릭 시도
+                if i == 5 and not success:
+                    print("      ⚠️ Shortcut didn't work immediately. Trying physical click as backup...")
+                    if post_btn.is_visible() and not post_btn.is_disabled():
+                        post_btn.click(force=True)
+
                 time.sleep(1)
 
             if not success:
-                print("      ⚠️ Warning: Confirmation not found, but trying to proceed.")
+                print("      ⚠️ Warning: Confirmation not found, but process finished.")
             
             time.sleep(3)
             print("✅ [X] Process Finished Successfully!")

@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 import json
+import random
 from datetime import datetime
 
 # 업로더 모듈 가져오기
@@ -16,17 +17,27 @@ BASE_DIR = os.getcwd()
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
 def get_best_description(txt_path, meta_data):
+    """
+    유튜브 설명을 위한 최적의 텍스트 추출 (JSON 우선)
+    """
+    # 1순위: JSON 데이터 먼저 확인
+    if meta_data and "youtube_description" in meta_data:
+        desc = meta_data["youtube_description"]
+        if desc and len(desc) > 10:
+            print("      ✅ Using structured description from metadata.json")
+            return desc
+    
+    # 2순위: TXT 파일 (JSON 누락 시 비상용)
     if os.path.exists(txt_path):
         try:
             with open(txt_path, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
-                if len(content) > 10: return content
+                if len(content) > 10: 
+                    print("      ⚠️ JSON description missing. Using full text file as fallback.")
+                    return content
         except: pass
     
-    if meta_data and "youtube_description" in meta_data:
-        return meta_data["youtube_description"]
-    
-    return "#shorts #art #news"
+    return "#shorts #tech #news"
 
 def find_video_file(category):
     """
@@ -49,9 +60,7 @@ def find_video_file(category):
 def process_and_archive_files(category):
     timestamp = datetime.now().strftime("%m%d%Y_%H%M")
     
-    # [수정] 파일 찾기
     src_video = find_video_file(category)
-    
     src_meta  = os.path.join(RESULTS_DIR, "metadata.json")
     src_text  = os.path.join(RESULTS_DIR, "social_metadata.txt")
 
@@ -98,15 +107,27 @@ def process_and_archive_files(category):
         return None, None, None
 
 def run_full_test():
-    print(f"\n🧪 Starting Art Category Test... {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\n🧪 Starting Tech & Science Category Test... {datetime.now().strftime('%H:%M:%S')}")
     
-    target_category = "art"
-    target_tone = "3" 
+    # [설정] 테스트 타겟: TECH
+    target_category = "tech"
+    
+    # [설정] 스케줄러 로직 반영 (Tech = Male, Tone 2)
+    target_tone = "2"   # Neutral/Smart
+    target_gender = "male"
+    
+    print(f"   ℹ️ Test Config: Category={target_category}, Gender={target_gender}, Tone={target_tone}")
 
     # 1. 영상 생성
     print(f"\n🎬 [Step 1] Generating Video ({target_category.upper()})...")
-    # 이미 생성된 파일로 테스트하려면 check=False 및 subprocess 주석 처리 고려
-    subprocess.run(["python", "main.py", "--category", target_category, "--tone", target_tone], check=False)
+    
+    # main.py 실행 (Gender, Tone 인자 전달)
+    subprocess.run([
+        "python", "main.py", 
+        "--category", target_category, 
+        "--gender", target_gender, 
+        "--tone", target_tone
+    ], check=False)
 
     # 2. 파일 보관
     print("\n📦 [Step 2] Archiving Files...")
@@ -119,9 +140,12 @@ def run_full_test():
     print(f"   ✅ Target File: {os.path.basename(video_path)}")
     
     # 3. 업로드
-    yt_title = f"[TEST] {meta.get('youtube_title', 'Art News Title')}"
+    # [수정] Test Title prefix 제거 (실전처럼)
+    yt_title = f"{meta.get('youtube_title', 'Tech News Title')}"
     yt_desc = desc_text 
-    sns_text = f"[TEST] {meta.get('x_post', 'Art News Check this out!')}"
+    sns_text = f"{meta.get('x_post', 'Tech News Update!')}"
+
+    print(f"\n📝 [Check] YouTube Description Preview:\n{'-'*30}\n{yt_desc[:100]}...\n{'-'*30}")
 
     # YouTube
     print("\n🟥 YouTube Upload...")
@@ -146,7 +170,7 @@ def run_full_test():
     except Exception as e: 
         print(f"   -> Failed: {e}")
 
-    print("\n✨ Art Test Complete. Files are preserved.")
+    print("\n✨ Tech Test Complete. Files are preserved.")
 
 if __name__ == "__main__":
     run_full_test()

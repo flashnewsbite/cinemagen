@@ -1,18 +1,25 @@
-# 1. 보안 파일 (절대 올리면 안 됨)
+# 1. 보안 및 개인 설정 파일 (가장 중요!)
 .env
 google_key.json
+credentials/       # [추가] 유튜브/구글 API 인증 키 포함 (client_secret.json 등)
+browser_profile/   # [추가] X, Threads 자동 로그인 세션 정보
 
 # 2. 가상환경 및 Python 관련
 venv/
+.venv/             # [추가] 스크린샷에 보이는 가상환경 폴더명 (.venv)
 __pycache__/
 *.py[cod]
 
-# 3. 결과물 (영상/오디오 파일이 너무 커서 Git에 올리면 안 됨)
+# 3. 결과물 및 미디어 데이터 (용량이 커서 제외)
 results/
 images/
 audio/
 
-# 4. 운영체제 시스템 파일
+# 4. 임시 미디어 파일 (루트 경로에 생기는 것들 방지)
+*.mp3              # [추가] 스크린샷의 output_gcp.mp3 같은 파일 제외
+*.mp4              # [추가] 혹시 루트에 생성될지 모르는 영상 제외
+
+# 5. 운영체제 및 실행 스크립트
 .DS_Store
 Thumbs.db
-run_cinema.bat
+*.bat              # [수정] run_cinema.bat 뿐만 아니라 run_scheduler.bat도 포함

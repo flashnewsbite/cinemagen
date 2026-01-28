@@ -1,0 +1,26 @@
+# 1. 보안 및 개인 설정 (절대 업로드 금지)
+.env
+google_key.json
+credentials/
+browser_profile/
+
+# 2. 가상환경 및 캐시
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# 3. 결과물 및 데이터 (용량 큼)
+results/
+images/
+audio/
+videos/
+
+# 4. 임시 파일
+*.mp3
+*.mp4
+*.log
+
+# 5. 시스템 파일
+.DS_Store
+Thumbs.db

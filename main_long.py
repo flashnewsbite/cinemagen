@@ -8,7 +8,9 @@ from writer_agent import WriterAgent
 from media_agent import MediaAgent
 from editor_long import EditorLong
 # 기존 YouTube Uploader 재사용
-from youtube_uploader import upload_video 
+
+# [수정] uploaders 폴더 안의 youtube_uploader 파일에서 불러오기
+from uploaders.youtube_uploader import upload_video
 
 def main():
     print(f"\n🎬 [CinemaGen Long-Form Studio] Initialized...")

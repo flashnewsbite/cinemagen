@@ -5,7 +5,7 @@ google-generativeai
 edge-tts
 Pillow
 google-cloud-texttospeech
-moviepy
+moviepy==1.0.3
 numpy
 playwright
 google-auth-oauthlib

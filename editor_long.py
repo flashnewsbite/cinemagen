@@ -1,13 +1,16 @@
 import os
 import re
+from datetime import datetime  # [수정 1] datetime 모듈 추가
 from PIL import Image, ImageFont, ImageDraw
 if not hasattr(Image, 'ANTIALIAS'): Image.ANTIALIAS = Image.LANCZOS
 from moviepy.editor import *
+import moviepy.video.fx.all as vfx # [수정 2] vfx 명시적 임포트
 import numpy as np
 import textwrap
 
 # [설정] 폰트 경로 (Windows 기준) - 없으면 기본 폰트 사용
-FONT_PATH = "C:/Windows/Fonts/arialbd.ttf" # Arial Bold
+# Roboto-Bold.ttf 파일을 프로젝트 폴더에 넣어주세요
+FONT_PATH = "Roboto-Bold.ttf" 
 
 # [설정] 레이아웃 (1920x1080 기준)
 W, H = 1920, 1080
@@ -97,12 +100,12 @@ class EditorLong:
         # [Case A] 비디오 (Pexels)
         if visual_type == 'video' and os.path.exists(vid_path):
             try:
-                # 비디오 로드 및 리사이징 (화면 꽉 차게)
+                # 비디오 로드
                 v = VideoFileClip(vid_path)
                 
-                # 비디오가 오디오보다 짧으면 루프, 길면 자르기
+                # [수정 2] vfx 모듈을 사용하여 루프 처리
                 if v.duration < duration:
-                    v = v_fx.loop(v, duration=duration)
+                    v = vfx.loop(v, duration=duration)
                 else:
                     v = v.subclip(0, duration)
                 
@@ -186,7 +189,6 @@ class EditorLong:
             last_idx = len(scenes)
             if os.path.exists(f"videos/video_{last_idx}.mp4"): 
                 outro_scene["visual_type"] = "video"
-                # outro_scene를 create_scene_clip에 넘길 때 idx를 last_idx로
             
             outro_clip = self.create_scene_clip(last_idx, outro_scene, "audio/outro.mp3")
             if outro_clip: clips.append(outro_clip)

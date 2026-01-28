@@ -6,7 +6,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
 # ====================================================
-# 🟥 YouTube API Uploader (Playlist Fixed)
+# 🟥 YouTube API Uploader (Health Playlist Integrated)
 # ====================================================
 
 BASE_DIR = os.getcwd()
@@ -19,7 +19,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl" 
 ]
 
-# 👇 사용자님이 제공한 Playlist ID (매핑 강화)
+# 👇 사용자님이 제공한 Playlist ID (Health 추가 완료)
 PLAYLIST_IDS = {
     # World News
     "world": "PLf2sQtl-qEjOuz7-HGAx2VX6d0hCEAZO2",
@@ -43,7 +43,10 @@ PLAYLIST_IDS = {
     
     # Art
     "art": "PLf2sQtl-qEjOGRMZSb-q-CSwvBFUulPx1",
-    "arts": "PLf2sQtl-qEjOGRMZSb-q-CSwvBFUulPx1"
+    "arts": "PLf2sQtl-qEjOGRMZSb-q-CSwvBFUulPx1",
+
+    # [NEW] Health Playlist (업데이트됨)
+    "health": "PLf2sQtl-qEjPXJ-rEHlZY4IlRypJVt2j4"
 }
 
 def get_authenticated_service():
@@ -84,28 +87,31 @@ def add_video_to_playlist(youtube, video_id, playlist_id):
         print(f"      ✅ Success! Added to playlist: {response['snippet']['title']}")
     except Exception as e:
         print(f"      ❌ Failed to add to playlist. Reason: {e}")
-        print("      (Tip: Did you delete token.json and re-login with ALL checkboxes checked?)")
+        print("      (Tip: Check if the Playlist ID is correct & token has permissions)")
 
 def upload_video(video_path, category="ent", title="Video", description="#shorts"):
     print(f"🚀 [YouTube API] Uploading: {title[:30]}...")
-    print(f"      📝 Description Length: {len(description)} chars") # 설명 길이 확인용
+    print(f"      📝 Description Length: {len(description)} chars") 
 
     youtube = get_authenticated_service()
 
-    # YouTube 카테고리 ID (24:Ent, 25:News, 28:Tech, 17:Sport)
+    # YouTube 카테고리 ID 설정
+    # 24:Ent, 25:News, 28:Tech, 17:Sport, 26:Howto/Style
     cat_lower = category.lower()
-    if cat_lower == "world": cid = "25"
-    elif cat_lower in ["ent", "entertainment"]: cid = "24"
-    elif cat_lower in ["fin", "finance"]: cid = "25"
-    elif cat_lower in ["tech", "science"]: cid = "28"
-    elif cat_lower in ["sport", "sports"]: cid = "17"
-    elif cat_lower in ["art", "arts"]: cid = "1"
-    else: cid = "24"
+    
+    if cat_lower == "world": cid = "25"      # News & Politics
+    elif cat_lower in ["ent", "entertainment"]: cid = "24" # Entertainment
+    elif cat_lower in ["fin", "finance"]: cid = "25"       # News & Politics
+    elif cat_lower in ["tech", "science"]: cid = "28"      # Science & Technology
+    elif cat_lower in ["sport", "sports"]: cid = "17"      # Sports
+    elif cat_lower in ["art", "arts"]: cid = "1"           # Film & Animation (Art 대체)
+    elif cat_lower == "health": cid = "25"                 # [NEW] News & Politics (뉴스 성격)
+    else: cid = "24" # Default
 
     body = {
         "snippet": {
             "title": title,
-            "description": description, # 여기가 핵심입니다.
+            "description": description,
             "tags": ["shorts", "news", "AI", category],
             "categoryId": cid
         },
@@ -132,13 +138,12 @@ def upload_video(video_path, category="ent", title="Video", description="#shorts
         print(f"      ✅ Upload Complete! Video ID: {video_id}")
 
         # 2. 재생목록 추가
-        # 입력된 카테고리를 키로 사용하여 ID 조회
         target_playlist_id = PLAYLIST_IDS.get(cat_lower)
         
         if target_playlist_id:
             add_video_to_playlist(youtube, video_id, target_playlist_id)
         else:
-            print(f"      ℹ️ No playlist ID found for category '{cat_lower}'. Skipping playlist.")
+            print(f"      ℹ️ Playlist ID missing or not set for '{cat_lower}'. Video uploaded but not added to playlist.")
 
         return True
 

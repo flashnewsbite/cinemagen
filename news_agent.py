@@ -39,7 +39,9 @@ class NewsAgent:
             "finance": f"{base_url}/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en",
             "sports": f"{base_url}/headlines/section/topic/SPORTS?hl=en-US&gl=US&ceid=US:en",
             "ent": f"{base_url}/headlines/section/topic/ENTERTAINMENT?hl=en-US&gl=US&ceid=US:en",
-            "art": f"{base_url}/search?q=Arts+Culture+Design&hl=en-US&gl=US&ceid=US:en"
+            "art": f"{base_url}/search?q=Arts+Culture+Design&hl=en-US&gl=US&ceid=US:en",
+            # [추가] Health 카테고리 (RSS 포맷으로 변환됨)
+            "health": "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ?hl=en-US&gl=US&ceid=US:en"
         }
 
         try:
@@ -80,7 +82,9 @@ class NewsAgent:
             "finance": "top finance business news today",
             "art": "latest arts and culture news today",
             "sports": "top sports news headlines today",
-            "ent": "entertainment news headlines today"
+            "ent": "entertainment news headlines today",
+            # [추가] Health 백업 검색어
+            "health": "top health news headlines medical updates today"
         }
         
         query = query_map.get(category, "latest news today")
@@ -140,22 +144,19 @@ class NewsAgent:
     def get_specific_news(self, url):
         """
         [UPGRADED] 특정 URL 딥 크롤링 (Playwright + Visible Browser 모드)
-        로이터(Reuters) 같은 보안이 강력한 사이트의 본문을 뚫기 위해 실제 브라우저를 띄웁니다.
         """
         print(f"🔗 [News] Deep Analyzing with VISIBLE Browser: {url}")
         
         try:
             with sync_playwright() as p:
-                # [핵심 1] headless=False: 브라우저 창을 실제로 띄웁니다. (봇 탐지 우회 확률 급상승)
+                # headless=False: 브라우저 창을 실제로 띄웁니다.
                 browser = p.chromium.launch(headless=False)
                 
-                # 최신 윈도우/크롬 환경으로 위장
                 context = browser.new_context(
                     user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
                     viewport=None
                 )
 
-                # 'navigator.webdriver' 속성을 숨겨서 자동화 도구임을 감춤
                 context.add_init_script("""
                     Object.defineProperty(navigator, 'webdriver', {
                         get: () => undefined
@@ -166,37 +167,25 @@ class NewsAgent:
                 
                 print("   ⏳ Loading page (Please do not close the popup)...")
                 try:
-                    # 페이지 이동 (최대 60초 대기)
                     page.goto(url, timeout=60000, wait_until="domcontentloaded")
-                    
-                    # [핵심 2] 사람처럼 5초 대기 (로딩 및 보안 스크립트 통과 시간 확보)
                     time.sleep(5)
-                    
-                    # 팝업 닫기 시도 (ESC 키 누름)
                     try: page.keyboard.press("Escape")
                     except: pass
 
-                    # [핵심 3] 특정 태그(Article) 대신, '모든 문단(P)'을 긁어모으는 공격적 전략
                     all_paragraphs = page.locator("p").all_inner_texts()
-                    
-                    # 광고, 메뉴 등 짧은 텍스트는 버리고 60자 이상인 문장만 수집
                     valid_paragraphs = [p for p in all_paragraphs if len(p) > 60]
-                    
                     content_text = "\n\n".join(valid_paragraphs)
                     
                 except Exception as e:
                     print(f"   ⚠️ Page interaction warning: {e}")
                     content_text = ""
                 finally:
-                    # 에러가 나더라도 브라우저는 반드시 종료
                     browser.close()
 
-                # 결과 검증
                 if len(content_text) < 200:
-                    print(f"   ⚠️ Scraped text snippet: {content_text[:100]}...") # 디버깅용
+                    print(f"   ⚠️ Scraped text snippet: {content_text[:100]}...") 
                     raise Exception("Still blocked or content empty.")
 
-                # 토큰 절약을 위해 4000자 제한
                 final_text = content_text[:4000]
                 final_text = " ".join(final_text.split())
 
@@ -205,5 +194,4 @@ class NewsAgent:
 
         except Exception as e:
             print(f"   ❌ Final Crawling Error: {e}")
-            # 크롤링 실패 시, 에러로 죽지 않고 URL 기반으로라도 대본을 쓰도록 유도
             return f"User provided specific URL: {url}. (Crawling failed. Please generate a creative script based on the URL keywords)."

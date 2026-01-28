@@ -4,7 +4,7 @@ import time
 import random
 
 # ====================================================
-# ⬛ X (Twitter) Browser Uploader (Keyboard Shortcut)
+# ⬛ X (Twitter) Browser Uploader (Fix: Force Click)
 # ====================================================
 
 BASE_DIR = os.getcwd()
@@ -45,12 +45,18 @@ def upload_video(video_path, text):
         return False
 
     with sync_playwright() as p:
+        # 800x600 모니터링 모드 유지
         context = p.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
             headless=False,
             channel="chrome",
-            viewport={"width": 1920, "height": 1080},
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars", "--start-maximized"]
+            viewport={"width": 800, "height": 600},
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-infobars",
+                "--window-size=800,600"
+            ]
         )
         apply_stealth(context)
         page = context.pages[0] if context.pages else context.new_page()
@@ -73,21 +79,19 @@ def upload_video(video_path, text):
             print("      📝 Typing caption...")
             page.keyboard.type(text)
             
-            # 3. [핵심] 업로드 완료 대기 (버튼 활성화 여부로 판단)
+            # 3. 업로드 완료 대기
             print("      ⏳ Waiting for video upload to complete...")
             
-            # 팝업창(Dialog) 내부의 버튼 찾기
             dialog = page.locator('div[role="dialog"]')
             post_btn = dialog.locator('button[data-testid="tweetButton"]')
             
-            # 못 찾으면 전체에서 찾기 (Fallback)
             if post_btn.count() == 0:
                 post_btn = page.locator('button[data-testid="tweetButton"]').last
 
             is_ready = False
-            for i in range(120): # 최대 2분 대기
+            for i in range(120): 
                 if not post_btn.is_disabled():
-                    print(f"      ✅ Upload 100% Complete! 'Post' button is active. ({i}s)")
+                    print(f"      ✅ Upload 100% Complete! ({i}s)")
                     is_ready = True
                     break
                 if i % 5 == 0: print(f"         ... uploading ({i}s)")
@@ -97,18 +101,15 @@ def upload_video(video_path, text):
                 print("❌ Timeout: Upload took too long.")
                 return False
 
-            # 안정성을 위해 잠시 대기
             time.sleep(2)
 
-            # 4. [NEW] 키보드 단축키로 전송 (Ctrl + Enter)
-            # 버튼 클릭이 씹히는 문제를 해결하기 위해 키보드 이벤트를 사용합니다.
+            # 4. [수정됨] 키보드 단축키로 전송 (강제 클릭 적용)
             print("      ⌨️ Sending Post via Keyboard Shortcut (Ctrl+Enter)...")
             
-            # 입력창에 확실히 포커스를 줍니다.
-            page.locator('div[role="textbox"]').first.click()
+            # [FIX] force=True: 투명 레이어가 가려도 뚫고 클릭해서 포커스 잡기
+            page.locator('div[role="textbox"]').first.click(force=True)
             time.sleep(0.5)
             
-            # Ctrl + Enter 입력 (Mac의 경우 Meta+Enter도 고려해야 하지만 보통 Ctrl+Enter가 웹 표준)
             page.keyboard.press("Control+Enter")
             
             # 5. 확인 로직
@@ -116,20 +117,18 @@ def upload_video(video_path, text):
             
             success = False
             for i in range(40):
-                # 성공 토스트 메시지
                 if page.locator('text="Your post was sent"').is_visible():
                     print("      ✅ Confirmed: 'Your post was sent' toast message.")
                     success = True
                     break
                 
-                # 모달이 닫혔는지 확인 (성공하면 입력창이 사라짐)
                 if page.locator('div[role="dialog"]').count() == 0:
                     if "compose/post" not in page.url:
                         print("      ✅ Confirmed: Modal closed.")
                         success = True
                         break
                 
-                # [Fallback] 만약 단축키가 안 먹혔다면 5초 뒤에 물리 클릭 시도
+                # 혹시 단축키가 씹혔으면 물리 클릭 시도
                 if i == 5 and not success:
                     print("      ⚠️ Shortcut didn't work immediately. Trying physical click as backup...")
                     if post_btn.is_visible() and not post_btn.is_disabled():

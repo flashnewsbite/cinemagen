@@ -13,10 +13,6 @@ from editor import Editor
 load_dotenv()
 
 def sanitize_script(script_data):
-    """
-    [Hotfix] 2026년 기준 트럼프는 현직 대통령입니다.
-    AI가 'Former' 또는 'Ex-'라고 잘못 쓴 표현을 강제로 교정합니다.
-    """
     if not script_data: return script_data
 
     def replace_text(text):
@@ -47,7 +43,7 @@ def main():
 
     # [NEW] 자동화 파라미터 설정
     parser = argparse.ArgumentParser(description="CinemaGen Automation")
-    parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent")
+    parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent, health")
     parser.add_argument("--gender", type=str, default="female", help="Voice gender: male or female")
     parser.add_argument("--tone", type=str, default="2", help="Voice tone: 1(Trust), 2(Neutral), 3(Bright)")
     # [핵심] 스케줄러가 전달하는 timestamp를 받기 위한 인자 추가
@@ -67,7 +63,6 @@ def main():
     tone = "2"
     
     # [타임스탬프 결정 로직]
-    # 외부(스케줄러) 입력이 있으면 그것을 최우선으로 사용, 없으면 자체 생성
     if args.timestamp:
         final_timestamp = args.timestamp
         print(f"🕒 [Time] Using External Timestamp: {final_timestamp}")
@@ -99,9 +94,15 @@ def main():
             print("   4. 🎨 Arts & Culture News")
             print("   5. 🏆 Sports News")
             print("   6. 🎬 Entertainment News")
+            print("   7. 🏥 Health News") # [추가]
             
-            cat_map = {"1": "world", "2": "tech", "3": "finance", "4": "art", "5": "sports", "6": "ent"}
-            cat_choice = input("   👉 Select Category (1-6): ").strip()
+            # [수정] 맵핑 추가
+            cat_map = {
+                "1": "world", "2": "tech", "3": "finance", 
+                "4": "art", "5": "sports", "6": "ent",
+                "7": "health"
+            }
+            cat_choice = input("   👉 Select Category (1-7): ").strip()
             target_category = cat_map.get(cat_choice, "world")
 
         print("\n[Step 2] Voice Settings")
@@ -176,7 +177,6 @@ def main():
                 print(f"   🔍 Found generated video: {cand}")
                 break
         
-        # 텍스트 및 JSON 파일 (기본 이름)
         src_meta = os.path.join(results_dir, "metadata.json")
         src_text = os.path.join(results_dir, "social_metadata.txt")
 

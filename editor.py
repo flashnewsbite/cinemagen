@@ -2,7 +2,6 @@ import os
 import re
 from datetime import datetime
 from PIL import Image, ImageFont, ImageDraw
-# PIL.Image.ANTIALIAS가 최신 버전에서 삭제되어 LANCZOS로 대체
 if not hasattr(Image, 'ANTIALIAS'): Image.ANTIALIAS = Image.LANCZOS
 from moviepy.editor import *
 from moviepy.audio.AudioClip import CompositeAudioClip
@@ -94,19 +93,12 @@ class Editor:
                 current_x += part_w
             current_y += line_height
 
-    # -------------------------------------------------------------------------
-    # [NEW] 1. 배경 레이어 생성 (액자 방식 줌인)
-    # -------------------------------------------------------------------------
     def create_base_layer(self, img_path, video_title, duration):
         W, H = 720, 1280
-        
-        # 1. 배경 이미지 (액자 안에서만 줌인)
         final_bg_clip = None
         
         if os.path.exists(img_path):
             img = Image.open(img_path).convert("RGB")
-            
-            # (A) 이미지 비율 맞추기 (4:3)
             target_ratio = 4/3
             iw, ih = img.size
             if iw/ih > target_ratio:
@@ -116,43 +108,30 @@ class Editor:
                 new_h = int(iw / target_ratio)
                 img = img.crop((0, (ih-new_h)//2, iw, (ih-new_h)//2+new_h))
             
-            # 여기서 4:3 박스의 정확한 높이를 구함 (너비는 720 고정)
-            box_height = int(W / target_ratio) # 720 / (4/3) = 540px
+            box_height = int(W / target_ratio) 
             img = img.resize((W, box_height), Image.LANCZOS)
             
-            # (B) 줌인 효과 정의
             def zoom_effect(t):
-                scale = 1.0 + (0.04 * t) # 초당 4% 확대
+                scale = 1.0 + (0.04 * t) 
                 return scale
 
-            # (C) 줌인 클립 생성
             raw_clip = ImageClip(np.array(img)).set_duration(duration)
             zooming_clip = raw_clip.resize(zoom_effect).set_position('center')
-            
-            # (D) [핵심] 액자(Container) 만들기
-            # CompositeVideoClip의 size를 지정하면, 그 크기를 벗어나는 내용은 자동으로 잘림(Crop)
-            # 즉, 720x540 크기의 상자 안에 점점 커지는 이미지를 가둬둠
             img_container = CompositeVideoClip([zooming_clip], size=(W, box_height))
-            
-            # (E) 전체 검은 배경(1280h) 위에 액자(540h)를 중앙 배치
             bg_base = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
             final_bg_clip = CompositeVideoClip([bg_base, img_container.set_position("center")])
-            
         else:
             final_bg_clip = ColorClip(size=(W, H), color=(0,0,0)).set_duration(duration)
 
-        # 2. 고정 텍스트 레이어 (제목 + 로고)
         text_canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(text_canvas)
 
-        # 제목
         video_title = self.auto_highlight_title(self.clean_text(video_title))
         title_lines = textwrap.wrap(video_title, width=22)
         self.draw_text_with_highlight(
             draw, title_lines, (W//2, FIXED_TITLE_Y), self.font_title, W, highlight_style='box'
         )
         
-        # 로고
         if os.path.exists("assets/logo.png"):
             logo = Image.open("assets/logo.png").convert("RGBA")
             logo.thumbnail((150, 150), Image.LANCZOS)
@@ -160,13 +139,8 @@ class Editor:
             text_canvas.paste(logo, ((W - logo.size[0]) // 2, logo_y), logo)
 
         fixed_layer = ImageClip(np.array(text_canvas)).set_duration(duration)
-        
-        # 배경 + 고정 텍스트 합체
         return CompositeVideoClip([final_bg_clip, fixed_layer])
 
-    # -------------------------------------------------------------------------
-    # [NEW] 2. 자막 레이어 생성 (투명 배경에 자막만)
-    # -------------------------------------------------------------------------
     def create_subtitle_clip(self, text_lines, duration):
         W, H = 720, 1280
         canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -179,9 +153,6 @@ class Editor:
             
         return ImageClip(np.array(canvas)).set_duration(duration)
 
-    # -------------------------------------------------------------------------
-    # [Helper] 인트로/아웃트로 처리 (기존 로직 유지)
-    # -------------------------------------------------------------------------
     def process_special_clip(self, video_path, audio_path, text_content, full_title):
         if not os.path.exists(video_path): return None
         video = VideoFileClip(video_path).resize(width=720)
@@ -200,7 +171,6 @@ class Editor:
         bg = ColorClip(size=(720, 1280), color=(0, 0, 0)).set_duration(video.duration)
         video_centered = video.set_position("center")
         
-        # 인트로용 오버레이는 기존 방식 사용
         W, H = 720, 1280
         canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
         draw = ImageDraw.Draw(canvas)
@@ -231,7 +201,7 @@ class Editor:
         
         clips = []
 
-        # 0. Thumbnail Trick (0.1s)
+        # 0. Thumbnail
         thumb_img_path = "images/image_1.png"
         if os.path.exists(thumb_img_path):
             print("📸 [Editor] Creating Thumbnail...")
@@ -269,17 +239,13 @@ class Editor:
                 curr += cnt
             
             total_scene_duration = full_audio.duration + PAUSE_DURATION
-            
-            # A. 베이스 레이어 생성 (액자 방식 줌인 적용)
             base_clip = self.create_base_layer(img_path, final_title, total_scene_duration)
             
-            # B. 자막 오버레이들 생성
             overlays = []
             dur_per_page = full_audio.duration / len(pages)
             
             for p_idx, page_lines in enumerate(pages):
                 start_time = p_idx * dur_per_page
-                
                 if p_idx == len(pages) - 1:
                     sub_duration = dur_per_page + PAUSE_DURATION
                 else:
@@ -291,7 +257,6 @@ class Editor:
             
             scene_clip = CompositeVideoClip([base_clip] + overlays)
             scene_clip = scene_clip.set_audio(full_audio)
-            
             clips.append(scene_clip)
 
         # 3. Outro
@@ -302,7 +267,13 @@ class Editor:
         # Final Render
         final = concatenate_videoclips(clips, method="compose")
         
-        suffix = {"world": "USWORLD", "tech": "TECH", "finance": "FINANCE", "art": "ARTS", "sports": "SPORTS", "ent": "ENT"}.get(category, "USWORLD")
+        # [수정] 맵핑에 health 추가
+        suffix_map = {
+            "world": "USWORLD", "tech": "TECH", "finance": "FINANCE", 
+            "art": "ARTS", "sports": "SPORTS", "ent": "ENT",
+            "health": "HEALTH"
+        }
+        suffix = suffix_map.get(category, "USWORLD")
         out_file = f"results/final_shorts_{suffix}.mp4"
         
         final.write_videofile(out_file, fps=30, codec="libx264", audio_codec="aac", bitrate="5000k", preset="medium")

@@ -30,18 +30,29 @@ def get_voice_settings(category):
     
     cat_lower = category.lower()
     
-    if cat_lower in ['world', 'finance', 'fin', 'us']:
+    # 1. 신뢰감 그룹 (Tone 1): World, Finance, Health
+    # 오전: 남성 / 오후: 여성
+    if cat_lower in ['world', 'finance', 'fin', 'us', 'health']:
         gender = "male" if is_morning else "female"
         tone = "1"
+        
+    # 2. 스마트/지식 그룹 (Tone 2): Tech, Science
+    # 오전: 남성 / 오후: 여성
     elif cat_lower in ['tech', 'science']:
-        gender = "male"
+        gender = "male" if is_morning else "female"
         tone = "2"
+        
+    # 3. 랜덤 그룹 (Tone 2): Sports
     elif cat_lower in ['sport', 'sports']:
         gender = random.choice(["male", "female"])
         tone = "2"
+        
+    # 4. 감성/밝음 그룹 (Tone 3): Ent, Art
+    # 항상 여성 (밝은 톤)
     elif cat_lower in ['ent', 'art', 'arts', 'entertainment']:
         gender = "female"
         tone = "3"
+        
     else:
         gender = "female"
         tone = "2"
@@ -60,7 +71,7 @@ def get_exact_files(category, timestamp):
     
     video_path = os.path.join(RESULTS_DIR, f"{base_name}.mp4")
     text_path = os.path.join(RESULTS_DIR, f"{base_name}.txt")
-    json_path = os.path.join(RESULTS_DIR, f"{base_name}.json") # [추가] JSON 경로 확보
+    json_path = os.path.join(RESULTS_DIR, f"{base_name}.json") 
     
     # 비디오 파일 존재 여부 확인 (필수)
     if not os.path.exists(video_path):
@@ -120,10 +131,7 @@ def run_job(category):
     meta_data = load_json_metadata(json_path)
     
     # (A) YouTube 데이터
-    # JSON에 제목이 없으면 기본 제목 사용
     yt_title = meta_data.get('youtube_title', f"Daily {category.capitalize()} News ⚡")
-    
-    # 설명 + 해시태그 결합
     yt_desc = meta_data.get('youtube_description', "")
     hashtags = meta_data.get('hashtags', "")
     if hashtags and hashtags not in yt_desc:
@@ -131,13 +139,11 @@ def run_job(category):
     
     # (B) X (Twitter) 데이터
     x_text = meta_data.get('x_post', "")
-    if not x_text: # 만약 비어있다면 유튜브 설명의 앞부분 사용
-        x_text = yt_desc[:200]
+    if not x_text: x_text = yt_desc[:200]
 
     # (C) Threads 데이터
     threads_text = meta_data.get('threads_post', "")
-    if not threads_text:
-        threads_text = yt_desc[:400]
+    if not threads_text: threads_text = yt_desc[:400]
 
     print(f"\n📝 [Check] Metadata Loaded:")
     print(f"   📺 YouTube Title: {yt_title}")
@@ -171,25 +177,26 @@ def run_job(category):
 schedule.every().day.at("07:00").do(run_job, category="world") 
 schedule.every().day.at("17:00").do(run_job, category="world") 
 
-# 2. 💻 Tech & Science News (3회)
-schedule.every().day.at("04:00").do(run_job, category="tech")
-schedule.every().day.at("13:00").do(run_job, category="tech")
-schedule.every().day.at("20:00").do(run_job, category="tech")
+# 2. 💻 Tech & Science News (2회 - 남/녀 교대)
+schedule.every().day.at("09:00").do(run_job, category="tech")
+schedule.every().day.at("21:00").do(run_job, category="tech")
 
-# 3. 💰 Finance News (4회)
-schedule.every().day.at("03:00").do(run_job, category="finance")
-schedule.every().day.at("09:30").do(run_job, category="finance")
-schedule.every().day.at("16:30").do(run_job, category="finance")
-schedule.every().day.at("21:00").do(run_job, category="finance")
+# 3. 💰 Finance News (2회 - 남/녀 교대)
+schedule.every().day.at("08:00").do(run_job, category="finance")
+schedule.every().day.at("20:00").do(run_job, category="finance")
 
 # 4. 🎨 Arts & Culture News (1회)
 schedule.every().day.at("14:00").do(run_job, category="art")
 
-# 5. 🏆 Sports News (1회)
-schedule.every().day.at("08:00").do(run_job, category="sports")
+# 5. 🏆 Sports News (1회 - 점심시간으로 이동)
+schedule.every().day.at("12:00").do(run_job, category="sports")
 
 # 6. 🎬 Entertainment News (1회)
 schedule.every().day.at("19:00").do(run_job, category="ent")
+
+# 7. 🏥 Health News (2회 - 남/녀 교대)
+schedule.every().day.at("06:00").do(run_job, category="health")
+schedule.every().day.at("18:00").do(run_job, category="health")
 
 if __name__ == "__main__":
     print("🤖 Scheduler Started...")

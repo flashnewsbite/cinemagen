@@ -1,0 +1,15 @@
+2026/01/26-07:29:58.616 49a0 Reusing MANIFEST C:\Users\parkm\cinemagen\browser_profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/01/26-07:29:58.618 49a0 Recovering log #120
+2026/01/26-07:29:58.619 49a0 Reusing old log C:\Users\parkm\cinemagen\browser_profile\Default\EdgeCoupons/coupons_data.db/000120.log 
+2026/01/26-07:29:58.788 21c8 Level-0 table #124: started
+2026/01/26-07:29:58.794 21c8 Level-0 table #124: 681376 bytes OK
+2026/01/26-07:29:58.797 21c8 Delete type=0 #120
+2026/01/26-07:29:58.797 21c8 Compacting 4@0 + 1@1 files
+2026/01/26-07:29:58.810 21c8 Generated table #125@0: 3 keys, 681376 bytes
+2026/01/26-07:29:58.810 21c8 Compacted 4@0 + 1@1 files => 681376 bytes
+2026/01/26-07:29:58.812 21c8 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/01/26-07:29:58.812 21c8 Delete type=2 #112
+2026/01/26-07:29:58.812 21c8 Delete type=2 #115
+2026/01/26-07:29:58.812 21c8 Delete type=2 #118
+2026/01/26-07:29:58.812 21c8 Delete type=2 #121
+2026/01/26-07:29:58.812 21c8 Delete type=2 #124

@@ -13,6 +13,10 @@ from editor import Editor
 load_dotenv()
 
 def sanitize_script(script_data):
+    """
+    [Hotfix] 2026년 기준 트럼프는 현직 대통령입니다.
+    AI가 'Former' 또는 'Ex-'라고 잘못 쓴 표현을 강제로 교정합니다.
+    """
     if not script_data: return script_data
 
     def replace_text(text):
@@ -41,11 +45,12 @@ def sanitize_script(script_data):
 def main():
     print(f"\n🤖 Flash News Bite AI Studio Initialized...")
 
-    # [자동화 파라미터 설정]
+    # [NEW] 자동화 파라미터 설정
     parser = argparse.ArgumentParser(description="CinemaGen Automation")
-    parser.add_argument("--category", type=str, help="Auto-run category")
-    parser.add_argument("--gender", type=str, default="female", help="Voice gender")
-    parser.add_argument("--tone", type=str, default="2", help="Voice tone")
+    parser.add_argument("--category", type=str, help="Auto-run category: world, tech, finance, art, sports, ent")
+    parser.add_argument("--gender", type=str, default="female", help="Voice gender: male or female")
+    parser.add_argument("--tone", type=str, default="2", help="Voice tone: 1(Trust), 2(Neutral), 3(Bright)")
+    # [핵심] 스케줄러가 전달하는 timestamp를 받기 위한 인자 추가
     parser.add_argument("--timestamp", type=str, help="External timestamp for file naming")
     
     args = parser.parse_args()
@@ -61,6 +66,8 @@ def main():
     gender = "female"
     tone = "2"
     
+    # [타임스탬프 결정 로직]
+    # 외부(스케줄러) 입력이 있으면 그것을 최우선으로 사용, 없으면 자체 생성
     if args.timestamp:
         final_timestamp = args.timestamp
         print(f"🕒 [Time] Using External Timestamp: {final_timestamp}")
@@ -133,9 +140,10 @@ def main():
 
         script_data = sanitize_script(script_data)
         
-        # [복구됨] metadata.json 저장 실행
+        # [메타데이터 저장]
         if 'metadata' in script_data:
-            writer.save_metadata_file(script_data['metadata'])
+            if hasattr(writer, 'save_metadata_file'):
+                writer.save_metadata_file(script_data['metadata'])
 
         # 3. Media Generation
         media_agent.get_audio(script_data, gender=gender, tone=tone)
@@ -152,7 +160,7 @@ def main():
         results_dir = "results"
         cat_upper = target_category.upper()
 
-        # 파일 이름 후보군
+        # 파일 이름 후보군 (Editor가 생성한 파일명)
         video_candidates = [
             f"final_shorts_{cat_upper}.mp4",
             f"final_shorts_{cat_upper}S.mp4",
@@ -168,14 +176,14 @@ def main():
                 print(f"   🔍 Found generated video: {cand}")
                 break
         
-        src_meta = os.path.join(results_dir, "metadata.json") # [복구]
+        # 텍스트 및 JSON 파일 (기본 이름)
+        src_meta = os.path.join(results_dir, "metadata.json")
         src_text = os.path.join(results_dir, "social_metadata.txt")
 
-        # [핵심] 스케줄러가 준 final_timestamp를 사용하여 파일명 확정
+        # [핵심] final_timestamp를 사용하여 최종 파일명 결정
         new_base = f"final_shorts_{cat_upper}_{final_timestamp}"
-        
         dst_video = os.path.join(results_dir, f"{new_base}.mp4")
-        dst_meta  = os.path.join(results_dir, f"{new_base}.json") # [복구]
+        dst_meta  = os.path.join(results_dir, f"{new_base}.json")
         dst_text  = os.path.join(results_dir, f"{new_base}.txt")
 
         # [1] 영상 이름 변경
@@ -188,7 +196,7 @@ def main():
         else:
             print(f"   ⚠️ Video file not found (Checked variants: {video_candidates})")
 
-        # [2] JSON 파일 이름 변경 (복구됨)
+        # [2] JSON 메타데이터 이름 변경 (보존)
         if os.path.exists(src_meta):
             if os.path.exists(dst_meta):
                 try: os.remove(dst_meta)
@@ -196,7 +204,7 @@ def main():
             os.rename(src_meta, dst_meta)
             print(f"   ✅ Metadata Saved: {dst_meta}")
 
-        # [3] 텍스트 파일 이름 변경
+        # [3] 소셜 텍스트 이름 변경 (보존)
         if os.path.exists(src_text):
             if os.path.exists(dst_text):
                 try: os.remove(dst_text)

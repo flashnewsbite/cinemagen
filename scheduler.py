@@ -50,8 +50,8 @@ def get_voice_settings(category):
 
 def get_exact_files(category, timestamp):
     """
-    [수정됨] 스케줄러가 지정한 timestamp로 정확한 파일 경로를 반환합니다.
-    검색(guessing)하지 않고, 지정된 경로를 확인합니다.
+    [NEW] 스케줄러가 지정한 timestamp로 정확한 파일 경로를 반환합니다.
+    (MP4 영상, TXT 파일, JSON 메타데이터 3가지를 모두 찾습니다)
     """
     cat_upper = category.upper()
     
@@ -60,34 +60,34 @@ def get_exact_files(category, timestamp):
     
     video_path = os.path.join(RESULTS_DIR, f"{base_name}.mp4")
     text_path = os.path.join(RESULTS_DIR, f"{base_name}.txt")
+    json_path = os.path.join(RESULTS_DIR, f"{base_name}.json") # [추가] JSON 경로 확보
     
+    # 비디오 파일 존재 여부 확인 (필수)
     if not os.path.exists(video_path):
         print(f"      ❌ Critical: Expected video file not found!")
         print(f"         Target: {video_path}")
-        return None, None
+        return None, None, None
 
     print(f"      ✅ Verified file exists: {os.path.basename(video_path)}")
-    return video_path, text_path
+    return video_path, text_path, json_path
 
-def get_description_content(txt_path):
+def load_json_metadata(json_path):
     """
-    TXT 파일 내용을 읽어서 설명을 반환
+    JSON 파일을 안전하게 읽어오는 함수
     """
-    if txt_path and os.path.exists(txt_path):
+    if json_path and os.path.exists(json_path):
         try:
-            with open(txt_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if len(content) > 10:
-                    return content
-        except: pass
-    
-    return "#shorts #news"
+            with open(json_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"      ⚠️ Error loading JSON: {e}")
+    return {}
 
 def run_job(category):
     """
     스케줄러 잡 실행 함수
     """
-    # 1. 작업 ID(Timestamp) 생성 - 스케줄러가 주도권을 가짐
+    # 1. 작업 ID(Timestamp) 생성 - 스케줄러가 주도권을 가짐 (Timestamp Injection)
     timestamp = datetime.now().strftime("%m%d%Y_%H%M")
     
     gender, tone = get_voice_settings(category)
@@ -97,32 +97,52 @@ def run_job(category):
     print(f"   🎙️ Voice Director: Gender='{gender.upper()}', Tone='{tone}'")
 
     # 2. 영상 생성 요청 (timestamp 전달)
-    # main.py에게 "이 시간으로 파일 이름 지어!"라고 명령
     try:
         subprocess.run([
             "python", "main.py", 
             "--category", category, 
             "--gender", gender, 
             "--tone", tone,
-            "--timestamp", timestamp  # [핵심] 스케줄러가 시간을 지정해서 전달
+            "--timestamp", timestamp
         ], check=True)
     except Exception as e:
         print(f"❌ Generation Failed: {e}")
         return
 
-    # 3. [수정됨] 정확한 파일명으로 가져오기
-    video_path, text_path = get_exact_files(category, timestamp)
+    # 3. [수정됨] 정확한 파일명으로 가져오기 (JSON 포함)
+    video_path, text_path, json_path = get_exact_files(category, timestamp)
     
     if not video_path:
         print(f"❌ Aborting upload. Job failed for {category}.")
         return
 
-    # 4. 업로드 데이터 준비
-    yt_title = f"Daily {category.capitalize()} News ⚡"
-    yt_desc = get_description_content(text_path)
-    sns_text = yt_desc if len(yt_desc) < 280 else (yt_desc[:250] + "...")
+    # 4. [핵심 수정] JSON 데이터 로드 및 플랫폼별 내용 분배
+    meta_data = load_json_metadata(json_path)
+    
+    # (A) YouTube 데이터
+    # JSON에 제목이 없으면 기본 제목 사용
+    yt_title = meta_data.get('youtube_title', f"Daily {category.capitalize()} News ⚡")
+    
+    # 설명 + 해시태그 결합
+    yt_desc = meta_data.get('youtube_description', "")
+    hashtags = meta_data.get('hashtags', "")
+    if hashtags and hashtags not in yt_desc:
+        yt_desc += f"\n\n{hashtags}"
+    
+    # (B) X (Twitter) 데이터
+    x_text = meta_data.get('x_post', "")
+    if not x_text: # 만약 비어있다면 유튜브 설명의 앞부분 사용
+        x_text = yt_desc[:200]
 
-    print(f"\n📝 [Check] Description Preview:\n{'-'*30}\n{yt_desc[:100]}...\n{'-'*30}")
+    # (C) Threads 데이터
+    threads_text = meta_data.get('threads_post', "")
+    if not threads_text:
+        threads_text = yt_desc[:400]
+
+    print(f"\n📝 [Check] Metadata Loaded:")
+    print(f"   📺 YouTube Title: {yt_title}")
+    print(f"   ❌ X Post: {x_text[:50]}...")
+    print(f"   🧵 Threads Post: {threads_text[:50]}...")
 
     # ==========================================
     # 🚀 [업로드 순서] YouTube -> X -> Threads
@@ -134,12 +154,12 @@ def run_job(category):
 
     # 2. X (Twitter)
     print("   🚀 [2/3] Uploading to X...")
-    x_upload(video_path, text=sns_text)
+    x_upload(video_path, text=x_text)
     
     # 3. Threads
     print("   🚀 [3/3] Uploading to Threads...")
     time.sleep(5)
-    threads_upload(video_path, text=sns_text)
+    threads_upload(video_path, text=threads_text)
     
     print(f"✨ Job Finished for {category}.\n")
 

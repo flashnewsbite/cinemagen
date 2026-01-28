@@ -1,0 +1,6 @@
+2026/01/26-07:40:16.646 c88 Reusing MANIFEST C:\Users\parkm\cinemagen\browser_profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/01/26-07:40:16.647 c88 Recovering log #123
+2026/01/26-07:40:16.650 c88 Reusing old log C:\Users\parkm\cinemagen\browser_profile\Default\EdgeCoupons/coupons_data.db/000123.log 
+2026/01/26-07:40:16.752 2500 Level-0 table #128: started
+2026/01/26-07:40:16.757 2500 Level-0 table #128: 681376 bytes OK
+2026/01/26-07:40:16.759 2500 Delete type=0 #123

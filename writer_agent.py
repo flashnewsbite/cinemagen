@@ -82,6 +82,10 @@ class WriterAgent:
             1. VIRAL HOOK ONLY. Max 6-8 Words.
             2. NO generic words.
             
+            [⚠️ POST LENGTH RULES - STRICT]
+            1. **X (Twitter)**: MAX 280 Characters (including hashtags).
+            2. **Threads**: MAX 500 Characters.
+
             [Highlighting Rules]
             - Wrap 1-2 key words per sentence in asterisks (*) for yellow highlighting.
 
@@ -126,14 +130,28 @@ class WriterAgent:
                 
                 data = json.loads(text)
 
-                # [안전장치] 숏폼 모드일 때 SNS 필드 누락 방지 (기존 코드의 안전장치 복원)
+                # [안전장치] 숏폼 모드일 때 SNS 필드 누락 및 글자 수 초과 방지
                 if 'metadata' in data:
                     meta = data['metadata']
-                    # 숏폼 필수 필드들이 비어있으면 채워넣기
-                    if not meta.get('threads_post'): meta['threads_post'] = meta.get('x_post', '')
-                    if not meta.get('x_post'): meta['x_post'] = meta.get('youtube_description', '')[:280]
+                    
+                    # 1. Threads 내용 채우기 (없으면 X 내용 사용)
+                    if not meta.get('threads_post'): 
+                        meta['threads_post'] = meta.get('x_post', meta.get('youtube_description', ''))
+                    
+                    # 2. X 내용 채우기 (없으면 유튜브 설명 사용)
+                    if not meta.get('x_post'): 
+                        meta['x_post'] = meta.get('youtube_description', '')
+
+                    # 3. 인스타/틱톡 채우기
                     if not meta.get('instagram_post'): meta['instagram_post'] = meta.get('youtube_description', '')
                     if not meta.get('tiktok_post'): meta['tiktok_post'] = meta.get('instagram_post', '')
+
+                    # [핵심] 글자 수 강제 제한 (안전장치)
+                    if len(meta['x_post']) > 280:
+                        meta['x_post'] = meta['x_post'][:277] + "..."
+                    
+                    if len(meta['threads_post']) > 500:
+                        meta['threads_post'] = meta['threads_post'][:497] + "..."
                 
                 # 파일 저장
                 self.save_metadata_file(data.get('metadata', {}))
@@ -174,12 +192,12 @@ class WriterAgent:
 📱 SOCIAL MEDIA POSTS (Shorts Only)
 ============================================================
 
-[X (Twitter)]
+[X (Twitter) - Max 280]
 ------------------------------------------------------------
 {metadata.get('x_post', 'N/A')}
 ------------------------------------------------------------
 
-[Threads]
+[Threads - Max 500]
 ------------------------------------------------------------
 {metadata.get('threads_post', 'N/A')}
 ------------------------------------------------------------

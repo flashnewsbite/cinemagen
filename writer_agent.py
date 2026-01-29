@@ -7,33 +7,39 @@ from datetime import date
 import re
 
 class WriterAgent:
-    def generate_content(self, context, mode="shorts", source_type="news"):
+    def generate_content(self, context, mode="shorts", source_type="news", duration="2-4 minutes"):
         """
         mode: "shorts" or "long"
         source_type: "news" or "topic"
+        duration: "2-4 minutes", "6-10 minutes", etc. (Only used for long mode)
         """
-        print(f"✍️ [Writer] Generating Script (Mode: {mode.upper()})...")
+        print(f"✍️ [Writer] Generating Script (Mode: {mode.upper()}, Target: {duration})...")
         
         today_str = date.today().strftime("%Y-%m-%d")
 
         # =================================================================
-        # [NEW] LONG-FORM PROMPT (유튜브 롱폼용)
+        # [UPGRADED] LONG-FORM PROMPT (유튜브 롱폼용)
         # =================================================================
         if mode == "long":
             visual_guide = "Use 'image' type for factual events. Use 'video' type for cinematic backgrounds."
             if source_type == "topic":
                 visual_guide = "Prioritize 'video' type (Pexels) for storytelling. Use 'image' only for specific data."
 
+            # [핵심 수정] Language: English Only 강제
             prompt = f"""
             Role: Professional YouTube Documentary Creator.
             Date: {today_str}
-            Format: Long-form YouTube Video (Target: 2-3 minutes).
+            Format: Long-form YouTube Video.
+            Target Duration: **{duration}** (Strictly Adhere to this length).
+            **LANGUAGE: ENGLISH ONLY** (Even if input is Korean/Foreign, output MUST be in English).
             
             Task:
-            1. Write a script based on [Input Context].
-            2. Structure: Intro (Hook) -> Body (3-4 Key Points) -> Conclusion.
-            3. **Visual Cues**: Decide whether to use a Stock Video ('video') or a News Image ('image') for each scene.
-            4. **Narration**: Max 2 sentences per scene.
+            1. Write a detailed script based on [Input Context].
+            2. **Intro Narration**: Start with a strong hook relevant to the topic, then say "Welcome back to the channel."
+            3. **Body**: Divide into logical scenes/chapters.
+            4. **Outro Narration**: Summarize the key point in 1 sentence, then ask viewers to "Like, Subscribe, and Comment" for more updates.
+            5. **Volume**: Ensure the total narration word count is sufficient for a {duration} video.
+            6. **Visual Cues**: Decide whether to use a Stock Video ('video') or a News Image ('image') for each scene.
 
             [Input Context]
             {context}
@@ -44,31 +50,34 @@ class WriterAgent:
 
             [Output Format - JSON Only]
             {{
-                "title": "YouTube Video Title",
-                "description": "YouTube Description with hashtags...",
+                "title": "YouTube Video Title (MAX 100 CHARACTERS) - ENGLISH",
+                "description": "YouTube Description with hashtags... - ENGLISH",
+                "intro_narration": "Hook + Welcome message (English)",
+                "outro_narration": "Summary + Call to Action (English)",
                 "script": {{
                     "scenes": [
                         {{
-                            "narration": "Narration text...",
+                            "narration": "Detailed narration text (English)...",
                             "visual_type": "video", 
                             "visual_prompt": "cinematic view of..." 
                         }},
-                        ... (Create enough scenes for 2+ mins)
+                        ... (Create enough scenes to fill {duration})
                     ]
                 }},
                 "metadata": {{
-                    "tags": ["tag1", "tag2"]
+                    "tags": ["tag1 (English)", "tag2 (English)"]
                 }}
             }}
             """
 
         # =================================================================
-        # [EXISTING] SHORTS PROMPT (기존 숏폼용 - SNS 포스팅 포함)
+        # [EXISTING] SHORTS PROMPT (기존 숏폼용)
         # =================================================================
         else:
             prompt = f"""
             Role: Expert News Creator & Social Media Manager.
             Date: {today_str}
+            **LANGUAGE: ENGLISH ONLY** (Translate input if necessary).
             
             Task: 
             1. Create a YouTube Shorts script based on [Input Context].
@@ -78,9 +87,11 @@ class WriterAgent:
             [Input Context]
             {context}
 
-            [⚠️ TITLE RULES]
-            1. VIRAL HOOK ONLY. Max 6-8 Words.
-            2. NO generic words.
+            [⚠️ TITLE RULES - CRITICAL]
+            1. **LENGTH:** STRICTLY UNDER 100 CHARACTERS (Spaces included).
+            2. **VIRAL HOOK ONLY.** (e.g., "Apple Buys OpenAI?", "Bitcoin Crashes!")
+            3. NO generic words like "News", "Update", "Daily".
+            4. **Language:** English.
             
             [⚠️ POST LENGTH RULES - STRICT]
             1. **X (Twitter)**: MAX 280 Characters (including hashtags).
@@ -91,17 +102,18 @@ class WriterAgent:
 
             [Output Format - JSON Only]
             {{
-                "title": "Viral Title",
-                "intro_narration": "Intro...",
-                "outro_narration": "Outro...",
+                "title": "Viral Title (English, UNDER 100 CHARS)",
+                "intro_narration": "Intro (English)...",
+                "outro_narration": "Outro (English)...",
                 "script": {{
                     "scenes": [
-                        {{ "narration": "Narration...", "image_prompt": "Visual..." }}
+                        {{ "narration": "Narration (English)...", "image_prompt": "Visual..." }}
                     ]
                 }},
                 "metadata": {{
-                    "youtube_title": "...", "youtube_description": "...", "hashtags": "...",
-                    "x_post": "...", "instagram_post": "...", "tiktok_post": "...", "threads_post": "..."
+                    "youtube_title": "Viral Title (English)", 
+                    "youtube_description": "English...", "hashtags": "English...",
+                    "x_post": "English...", "instagram_post": "English...", "tiktok_post": "English...", "threads_post": "English..."
                 }}
             }}
             """
@@ -122,7 +134,7 @@ class WriterAgent:
                 response = model.generate_content(
                     prompt, 
                     generation_config={"response_mime_type": "application/json"},
-                    request_options={"timeout": 20}
+                    request_options={"timeout": 60} 
                 )
                 text = response.text.strip()
                 if text.startswith("```json"): text = text[7:]
@@ -130,30 +142,21 @@ class WriterAgent:
                 
                 data = json.loads(text)
 
-                # [안전장치] 숏폼 모드일 때 SNS 필드 누락 및 글자 수 초과 방지
                 if 'metadata' in data:
                     meta = data['metadata']
-                    
-                    # 1. Threads 내용 채우기 (없으면 X 내용 사용)
-                    if not meta.get('threads_post'): 
-                        meta['threads_post'] = meta.get('x_post', meta.get('youtube_description', ''))
-                    
-                    # 2. X 내용 채우기 (없으면 유튜브 설명 사용)
-                    if not meta.get('x_post'): 
-                        meta['x_post'] = meta.get('youtube_description', '')
+                    yt_title = meta.get('youtube_title', data.get('title', ''))
+                    if len(yt_title) > 100:
+                        meta['youtube_title'] = yt_title[:95].strip() + "..."
+                        data['title'] = meta['youtube_title']
 
-                    # 3. 인스타/틱톡 채우기
+                    if not meta.get('threads_post'): meta['threads_post'] = meta.get('x_post', meta.get('youtube_description', ''))
+                    if not meta.get('x_post'): meta['x_post'] = meta.get('youtube_description', '')
                     if not meta.get('instagram_post'): meta['instagram_post'] = meta.get('youtube_description', '')
                     if not meta.get('tiktok_post'): meta['tiktok_post'] = meta.get('instagram_post', '')
 
-                    # [핵심] 글자 수 강제 제한 (안전장치)
-                    if len(meta['x_post']) > 280:
-                        meta['x_post'] = meta['x_post'][:277] + "..."
-                    
-                    if len(meta['threads_post']) > 500:
-                        meta['threads_post'] = meta['threads_post'][:497] + "..."
+                    if len(meta['x_post']) > 280: meta['x_post'] = meta['x_post'][:277] + "..."
+                    if len(meta['threads_post']) > 500: meta['threads_post'] = meta['threads_post'][:497] + "..."
                 
-                # 파일 저장
                 self.save_metadata_file(data.get('metadata', {}))
                 
                 return data
@@ -165,12 +168,8 @@ class WriterAgent:
         return None
 
     def save_metadata_file(self, metadata, folder="results"):
-        """
-        [UPGRADED] 숏폼(SNS 포함)과 롱폼(기본 정보만)을 모두 완벽하게 저장하는 함수
-        """
         os.makedirs(folder, exist_ok=True)
         
-        # 1. 공통 정보
         title = metadata.get('youtube_title', metadata.get('title', 'N/A'))
         desc = metadata.get('youtube_description', metadata.get('description', 'N/A'))
         
@@ -184,7 +183,6 @@ class WriterAgent:
 [DESCRIPTION]
 {desc}
 """
-        # 2. 숏폼일 경우 (SNS 정보가 있으면 추가)
         if metadata.get('x_post') or metadata.get('instagram_post'):
             content += f"""
             
@@ -213,11 +211,9 @@ class WriterAgent:
 ------------------------------------------------------------
 """
         
-        # 텍스트 파일 저장
         with open(os.path.join(folder, "social_metadata.txt"), "w", encoding="utf-8") as f:
             f.write(content.strip())
             
-        # JSON 파일 저장 (자동화용)
         with open(os.path.join(folder, "metadata.json"), "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=4, ensure_ascii=False)
             

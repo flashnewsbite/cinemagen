@@ -7,9 +7,6 @@ from news_agent import NewsAgent
 from writer_agent import WriterAgent
 from media_agent import MediaAgent
 from editor_long import EditorLong
-# 기존 YouTube Uploader 재사용
-
-# [수정] uploaders 폴더 안의 youtube_uploader 파일에서 불러오기
 from uploaders.youtube_uploader import upload_video
 
 def main():
@@ -45,6 +42,23 @@ def main():
         print("❌ Failed to get context.")
         return
 
+    # [NEW] 2.5 영상 길이 선택
+    print("\n[Target Duration]")
+    print("1. Short (2~4 mins)")
+    print("2. Medium (6~10 mins)")
+    print("3. Long (12~18 mins)")
+    print("4. Feature (20~30 mins)")
+    dur_input = input("👉 Select Duration (1-4): ").strip()
+    
+    duration_map = {
+        '1': '2-4 minutes',
+        '2': '6-10 minutes',
+        '3': '12-18 minutes',
+        '4': '20-30 minutes'
+    }
+    target_duration = duration_map.get(dur_input, '2-4 minutes')
+    print(f"✅ Target Duration Set: {target_duration}")
+
     # 3. 보이스 설정
     print("\n[Voice Settings]")
     print("👉 Gender: 1. Male / 2. Female")
@@ -56,25 +70,19 @@ def main():
     tone_map = {'1':'1', '2':'2', '3':'3'}
     tone = tone_map.get(t_input, '1')
 
-    # 4. 대본 작성 (Long Mode)
-    # script_data 안에 메타데이터(Title, Desc 등)가 포함됨
-    script_data = writer.generate_content(context, mode="long", source_type=source_type)
+    # 4. 대본 작성 (Long Mode + Duration 전달)
+    script_data = writer.generate_content(context, mode="long", source_type=source_type, duration=target_duration)
     if not script_data:
         print("❌ Script generation failed.")
         return
     
-    # 카테고리 설정 (YouTube Playlist용) - 기본값 Education
-    # Writer가 JSON에 category를 주면 좋지만, 없으면 기본값 사용
     video_category = script_data.get("category", "tech") 
     
     print(f"\n📄 Title: {script_data.get('title')}")
     print(f"📄 Scenes: {len(script_data['script']['scenes'])}")
 
-    # 5. 미디어 생성 (오디오 + 비디오/이미지)
-    # 오디오 생성
+    # 5. 미디어 생성
     media_agent.get_audio(script_data, gender=gender, tone=tone)
-    
-    # 비주얼 에셋 다운로드 (Pexels Video + Serper Image 혼합)
     media_agent.get_mixed_media(script_data['script']['scenes'])
 
     print("\n✅ Assets Ready! Starting Editor...")
@@ -87,25 +95,17 @@ def main():
         print("🚀 [Upload] Uploading to YouTube...")
         print("="*50)
         
-        # 메타데이터 추출
         final_title = script_data.get('title', 'New Video')
-        # 설명에 해시태그 추가
         final_desc = script_data.get('description', '')
         if 'metadata' in script_data and 'tags' in script_data['metadata']:
             tags = script_data['metadata']['tags']
             hash_tags = " ".join([f"#{t.replace(' ', '')}" for t in tags])
             final_desc += f"\n\n{hash_tags}"
 
-        # YouTube 업로드 실행
-        # playlist_id는 youtube_uploader.py 내부 딕셔너리(PLAYLIST_IDS)에 의존
-        # 따라서 category 이름을 잘 넘겨주는 것이 중요함.
-        # WriterPrompt에서 category를 명시적으로 주지 않았다면, 
-        # 사용자가 입력한 Topic이나 URL 내용에 따라 추론된 category를 쓰거나 'tech' 등을 기본값으로.
-        
         success = upload_video(
             video_path=output_file,
-            category=video_category, # youtube_uploader의 PLAYLIST_IDS 키 값과 매칭 (예: world, tech, health...)
-            title=final_title[:100], # 유튜브 제목 길이 제한
+            category=video_category, 
+            title=final_title[:100],
             description=final_desc
         )
         

@@ -14,10 +14,9 @@ from google.cloud import texttospeech
 class MediaAgent:
     def __init__(self):
         os.makedirs("images", exist_ok=True)
-        os.makedirs("videos", exist_ok=True) # 비디오 폴더 추가
+        os.makedirs("videos", exist_ok=True)
         os.makedirs("audio", exist_ok=True)
         
-        # [설정] Google Cloud 인증 키 연결
         if os.path.exists("google_key.json"):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "google_key.json"
             self.has_gcp = True
@@ -26,20 +25,15 @@ class MediaAgent:
             self.has_gcp = False
             print("⚠️ [Media] 'google_key.json' not found. GCP TTS disabled.")
 
-    # Gemini Voices
     GEMINI_VOICES = {
         "male": {"1": "Charon", "2": "Puck", "3": "Fenrir"},
         "female": {"1": "Aoede", "2": "Kore", "3": "Leda"}
     }
-    # Edge TTS Voices
     EDGE_VOICES = {
         "male": {"1": "en-US-ChristopherNeural", "2": "en-US-GuyNeural", "3": "en-US-EricNeural"},
         "female": {"1": "en-US-MichelleNeural", "2": "en-US-JennyNeural", "3": "en-US-AriaNeural"}
     }
 
-    # =========================================================================
-    # 1. 이미지 다운로드 (Serper) - 기존 로직 유지
-    # =========================================================================
     def _download_logic(self, query, filename, min_width=800):
         url = "https://google.serper.dev/images"
         payload = json.dumps({"q": query, "num": 30}) 
@@ -69,7 +63,7 @@ class MediaAgent:
                             if img.mode != 'RGB': img = img.convert('RGB')
                             w, h = img.size
                             if w < min_width: continue
-                            if w <= h: continue # 가로형만 허용
+                            if w <= h: continue 
                             img.save(filename, format='PNG')
                             if os.path.exists(filename) and os.path.getsize(filename) > 1000:
                                 print(f"   ✅ [Image] Saved: {filename}")
@@ -86,26 +80,27 @@ class MediaAgent:
         return False
 
     def get_images(self, scenes):
-        """ 기존 Shorts용 이미지 다운로더 (100% 이미지) """
         print(f"🎨 [Media] Downloading Images for Shorts...")
         for i, scene in enumerate(scenes):
             idx = i + 1
             if not self.search_and_download_image(scene['image_prompt'], f"images/image_{idx}.png"):
-                 # 실패시 블랙 스크린
                  Image.new('RGB', (1280, 720), (20,30,60)).save(f"images/image_{idx}.png")
 
     # =========================================================================
-    # [NEW] 1.5 비디오 다운로드 (Pexels) - 롱폼용 추가
+    # [UPGRADED] 1.5 비디오 다운로드 (고화질 검색어 추가)
     # =========================================================================
     def search_and_download_video(self, query, filename, min_duration=5):
         if not Config.PEXELS_KEY:
             print("⚠️ Pexels Key missing.")
             return False
 
-        print(f"   🎥 [Pexels] Searching: '{query}'")
+        # [핵심] 고화질 검색어 자동 추가 (품질 향상)
+        enhanced_query = f"{query} 4k cinematic photorealistic high quality"
+        print(f"   🎥 [Pexels] Searching: '{enhanced_query}'")
+        
         url = "https://api.pexels.com/videos/search"
         headers = {"Authorization": Config.PEXELS_KEY}
-        params = {"query": query, "orientation": "landscape", "per_page": 5, "size": "medium"}
+        params = {"query": enhanced_query, "orientation": "landscape", "per_page": 5, "size": "medium"}
 
         try:
             r = requests.get(url, headers=headers, params=params, timeout=10)
@@ -139,32 +134,26 @@ class MediaAgent:
         return False
 
     def get_mixed_media(self, scenes):
-        """ [NEW] 롱폼용: 대본의 'visual_type'에 따라 비디오/이미지 혼합 다운로드 """
         print(f"🎨 [Media] Downloading Mixed Assets (Video + Image)...")
         
         for i, scene in enumerate(scenes):
             idx = i + 1
-            v_type = scene.get('visual_type', 'image') # 기본값 image
+            v_type = scene.get('visual_type', 'image') 
             prompt = scene.get('visual_prompt', scene.get('image_prompt', 'news'))
             
-            # 1. 비디오 요청인 경우
             if v_type == 'video':
                 v_filename = f"videos/video_{idx}.mp4"
                 if self.search_and_download_video(prompt, v_filename):
-                    continue # 성공하면 다음 씬으로
+                    continue 
                 else:
                     print(f"      ⚠️ Video failed. Fallback to Image for Scene {idx}")
-                    v_type = 'image' # 실패하면 이미지로 전환
+                    v_type = 'image'
 
-            # 2. 이미지 요청이거나 비디오 실패 시
             if v_type == 'image':
                 i_filename = f"images/image_{idx}.png"
                 if not self.search_and_download_image(prompt, i_filename):
                      Image.new('RGB', (1920, 1080), (20,30,60)).save(i_filename)
 
-    # =========================================================================
-    # 2. TTS 엔진들 (기존 로직 유지)
-    # =========================================================================
     def try_gcp_tts(self, text, filename, voice_name="en-US-Neural2-F"):
         if not self.has_gcp: return False
         try:
@@ -211,7 +200,6 @@ class MediaAgent:
         
         print(f"🎙️ [Media] Audio Strategy: 1.GCP -> 2.Gemini -> 3.Edge")
 
-        # 기존처럼 * 제거 (자막엔 남기고 오디오엔 제거)
         intro_txt = data.get('intro_narration', "").replace("*", "")
         outro_txt = data.get('outro_narration', "").replace("*", "")
         scenes = data['script']['scenes']

@@ -8,12 +8,12 @@ import moviepy.video.fx.all as vfx
 import numpy as np
 import textwrap
 
-# [설정] 레이아웃 (1920x1080 기준)
+# [설정] 레이아웃
 W, H = 1920, 1080
+SUBTITLE_Y = 750  
 
-# [설정] 폰트 크기 및 위치 (큼직하게 설정)
-FONT_SIZE = 100   # 1920p에서 잘 보이도록 100px로 설정
-SUBTITLE_Y = 850  # 하단 여백 확보
+# [수정 1] 폰트 크기 축소 (95 -> 80)
+FONT_SIZE = 80    
 
 class EditorLong:
     def __init__(self):
@@ -21,28 +21,16 @@ class EditorLong:
         self.font = self.load_font()
 
     def load_font(self):
-        """
-        [수정] assets 폴더 내의 폰트를 우선적으로 찾습니다.
-        """
         font_candidates = [
-            ("assets/Roboto-Bold.ttf", "Asset Roboto"),     # 1순위: assets 폴더
-            ("Roboto-Bold.ttf", "Root Roboto"),             # 2순위: 루트 폴더
-            ("C:/Windows/Fonts/arialbd.ttf", "Windows Arial"), # 3순위: 윈도우 기본
-            ("C:/Windows/Fonts/malgunbd.ttf", "Windows Malgun") # 4순위: 맑은 고딕
+            ("assets/Roboto-Bold.ttf", "Asset Roboto"),     
+            ("Roboto-Bold.ttf", "Root Roboto"),             
+            ("C:/Windows/Fonts/arialbd.ttf", "Windows Arial"), 
+            ("C:/Windows/Fonts/malgunbd.ttf", "Windows Malgun") 
         ]
-
         for path, name in font_candidates:
             if os.path.exists(path):
-                try:
-                    font = ImageFont.truetype(path, FONT_SIZE)
-                    print(f"✅ [Font] Successfully loaded: {name} (Path: {path})")
-                    return font
-                except Exception as e:
-                    print(f"⚠️ Failed loading {name}: {e}")
-                    continue
-        
-        # 모든 시도 실패 시
-        print("🚨 [Font] CRITICAL WARNING: No fonts found. Using tiny default font.")
+                try: return ImageFont.truetype(path, FONT_SIZE)
+                except: continue
         return ImageFont.load_default()
 
     def clean_text(self, text):
@@ -50,14 +38,13 @@ class EditorLong:
         pattern = r'[^a-zA-Z0-9\s.,?!:;\'"*\-()\[\]%가-힣]'
         return re.sub(pattern, '', text).strip()
 
-    def create_subtitle_image(self, text_chunk, width=1600):
-        # [설정] 한 줄당 30자 (글자가 커졌으므로 줄바꿈 자주 일어나게)
-        wrapper = textwrap.TextWrapper(width=30) 
-        lines = wrapper.wrap(text_chunk)
-        
-        line_height = int(FONT_SIZE * 1.3)
+    def create_subtitle_image_from_lines(self, lines):
+        # [수정 2] 줄 간격(Gap) 자동 조정
+        # 폰트가 작아졌으므로 1.4배수로 설정하여 가독성 확보 (80 * 1.4 = 112px 높이)
+        line_height = int(FONT_SIZE * 1.4) 
         total_height = line_height * len(lines)
         
+        # 캔버스 높이 여유있게
         img = Image.new('RGBA', (W, total_height + 40), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
@@ -66,7 +53,6 @@ class EditorLong:
             clean_line = self.clean_text(line)
             parts = []
             buffer = ""; is_highlight = False
-            
             for char in clean_line:
                 if char == '*':
                     if buffer: parts.append((buffer, is_highlight))
@@ -74,53 +60,65 @@ class EditorLong:
                 else: buffer += char
             if buffer: parts.append((buffer, is_highlight))
 
-            try:
-                total_w = sum([self.font.getlength(p[0]) for p in parts])
-            except:
-                total_w = self.font.getsize(clean_line)[0]
-
+            try: total_w = sum([self.font.getlength(p[0]) for p in parts])
+            except: total_w = self.font.getsize(clean_line)[0]
             current_x = (W - total_w) / 2
 
             for part_text, highlight in parts:
                 fill_color = '#FFFF00' if highlight else 'white'
-                # 외곽선 두께 (폰트 크기 비례)
-                stroke_width = 6
+                
+                # [수정 3] 외곽선 두께 조정 (7 -> 6)
+                # 글씨가 작아졌으니 테두리도 살짝 얇게 해서 뭉침 방지
+                stroke_width = 6 
                 
                 for dx in range(-stroke_width, stroke_width+1):
                     for dy in range(-stroke_width, stroke_width+1):
                         draw.text((current_x+dx, y+dy), part_text, font=self.font, fill='black')
-                
                 draw.text((current_x, y), part_text, font=self.font, fill=fill_color)
-                
-                try:
-                    current_x += self.font.getlength(part_text)
-                except:
-                    current_x += self.font.getsize(part_text)[0]
-            
+                try: current_x += self.font.getlength(part_text)
+                except: current_x += self.font.getsize(part_text)[0]
             y += line_height
-
         return img
 
-    def create_scene_clip(self, idx, scene_data, audio_path):
+    def create_scene_clip(self, idx, scene_data, audio_path, override_video_path=None, loop_video=True):
         if not os.path.exists(audio_path): return None
         audio = AudioFileClip(audio_path)
         duration = audio.duration + 0.5 
 
         visual_type = scene_data.get('visual_type', 'image')
         img_path = f"images/image_{idx}.png"
-        vid_path = f"videos/video_{idx}.mp4"
+        
+        if override_video_path and os.path.exists(override_video_path):
+            vid_path = override_video_path
+            visual_type = 'video'
+        else:
+            vid_path = f"videos/video_{idx}.mp4"
+
         visual_clip = None
 
         if visual_type == 'video' and os.path.exists(vid_path):
             try:
                 v = VideoFileClip(vid_path)
-                if v.duration < duration: v = vfx.loop(v, duration=duration)
-                else: v = v.subclip(0, duration)
-                
+                if loop_video:
+                    if v.duration < duration: v = vfx.loop(v, duration=duration)
+                    else: v = v.subclip(0, duration)
+                else:
+                    # Intro/Outro freezing logic
+                    if v.duration < duration:
+                        freeze_duration = duration - v.duration
+                        if freeze_duration > 0:
+                            last_frame = v.get_frame(max(0, v.duration - 0.1))
+                            freeze_clip = ImageClip(last_frame).set_duration(freeze_duration)
+                            v = concatenate_videoclips([v, freeze_clip])
+                    else:
+                        v = v.subclip(0, duration)
+
                 visual_clip = v.resize(height=H)
                 if visual_clip.w < W: visual_clip = v.resize(width=W)
                 visual_clip = visual_clip.crop(x1=visual_clip.w/2 - W/2, y1=0, width=W, height=H)
-            except: visual_type = 'image'
+            except Exception as e:
+                print(f"⚠️ Video Error ({vid_path}): {e}. Fallback to Image.")
+                visual_type = 'image'
 
         if visual_type == 'image' or visual_clip is None:
             if not os.path.exists(img_path):
@@ -141,37 +139,48 @@ class EditorLong:
             visual_clip = clip.resize(lambda t: 1 + 0.04 * t).set_position('center')
 
         narration = scene_data.get('narration', '')
-        wrapper = textwrap.TextWrapper(width=35) 
+        if not narration: return visual_clip.set_audio(audio)
+
+        wrapper = textwrap.TextWrapper(width=30) 
         all_lines = wrapper.wrap(narration)
         
         pages = []
         for i in range(0, len(all_lines), 2):
-            chunk = " ".join(all_lines[i:i+2])
-            pages.append(chunk)
+            pages.append(all_lines[i:i+2]) 
 
-        if not pages: pages = [""]
+        if not pages: return visual_clip.set_audio(audio)
 
-        total_chars = len(narration.replace(" ", "")) if narration else 1
+        total_chars = len(narration.replace(" ", ""))
+        if total_chars == 0: total_chars = 1
+        
         overlays = []
         current_start = 0
         actual_audio_dur = audio.duration 
 
-        for i, page_text in enumerate(pages):
-            page_chars = len(page_text.replace(" ", ""))
+        for i, page_lines in enumerate(pages):
+            chunk_text = "".join(page_lines)
+            page_chars = len(chunk_text.replace(" ", ""))
+            
             if i < len(pages) - 1:
-                if total_chars > 0:
-                    page_duration = (page_chars / total_chars) * actual_audio_dur
-                else:
-                    page_duration = actual_audio_dur / len(pages)
+                ratio = page_chars / total_chars
+                page_duration = ratio * actual_audio_dur
+                if page_duration < 2.0: page_duration = 2.0
             else:
-                page_duration = max(0, actual_audio_dur - current_start)
+                page_duration = max(0, duration - current_start)
 
-            sub_img = self.create_subtitle_image(page_text)
+            if current_start + page_duration > duration:
+                page_duration = duration - current_start
+
+            sub_img = self.create_subtitle_image_from_lines(page_lines)
             sub_clip = ImageClip(np.array(sub_img))
+            
             sub_clip = sub_clip.set_start(current_start).set_duration(page_duration)
             sub_clip = sub_clip.set_position(('center', SUBTITLE_Y))
+            
             overlays.append(sub_clip)
             current_start += page_duration
+            
+            if current_start >= duration: break
 
         final_clip = CompositeVideoClip([visual_clip] + overlays, size=(W, H))
         final_clip = final_clip.set_audio(audio)
@@ -182,26 +191,49 @@ class EditorLong:
         scenes = data['script']['scenes']
         clips = []
         
+        # 1. Intro
         if os.path.exists("audio/intro.mp3"):
-            intro_scene = {"visual_type": "image", "narration": data.get("intro_narration", "")}
-            if os.path.exists("videos/video_1.mp4"): intro_scene["visual_type"] = "video"
-            intro_clip = self.create_scene_clip(1, intro_scene, "audio/intro.mp3")
+            print("   🔹 Processing Intro...")
+            intro_text = data.get("intro_narration", "")
+            intro_scene = {"visual_type": "image", "narration": intro_text}
+            
+            intro_vid = None
+            if os.path.exists("assets/intro_long.mp4"):
+                intro_vid = "assets/intro_long.mp4"
+                print("      ✅ Using 'intro_long.mp4'")
+            elif os.path.exists("assets/intro.mp4"):
+                intro_vid = "assets/intro.mp4"
+
+            intro_clip = self.create_scene_clip(0, intro_scene, "audio/intro.mp3", 
+                                                override_video_path=intro_vid, 
+                                                loop_video=False)
             if intro_clip: clips.append(intro_clip)
 
+        # 2. Main Scenes
         for i, scene in enumerate(scenes):
             idx = i + 1
             audio_path = f"audio/audio_{idx}.mp3"
-            clip = self.create_scene_clip(idx, scene, audio_path)
+            clip = self.create_scene_clip(idx, scene, audio_path, loop_video=True)
             if clip:
                 clips.append(clip)
                 print(f"   ✅ Processed Scene {idx}/{len(scenes)}")
 
+        # 3. Outro
         if os.path.exists("audio/outro.mp3"):
-            outro_scene = {"visual_type": "image", "narration": data.get("outro_narration", "")}
-            last_idx = len(scenes)
-            if os.path.exists(f"videos/video_{last_idx}.mp4"): 
-                outro_scene["visual_type"] = "video"
-            outro_clip = self.create_scene_clip(last_idx, outro_scene, "audio/outro.mp3")
+            print("   🔹 Processing Outro...")
+            outro_text = data.get("outro_narration", "")
+            outro_scene = {"visual_type": "image", "narration": outro_text}
+            
+            outro_vid = None
+            if os.path.exists("assets/outro_long.mp4"):
+                outro_vid = "assets/outro_long.mp4"
+                print("      ✅ Using 'outro_long.mp4'")
+            elif os.path.exists("assets/outro.mp4"):
+                outro_vid = "assets/outro.mp4"
+
+            outro_clip = self.create_scene_clip(len(scenes)+1, outro_scene, "audio/outro.mp3", 
+                                                override_video_path=outro_vid, 
+                                                loop_video=False)
             if outro_clip: clips.append(outro_clip)
 
         if not clips: return None
